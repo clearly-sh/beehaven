@@ -1,0 +1,29 @@
+{
+  "name": "beehaven-office",
+  "version": "1.0.0",
+  "description": "BeeHaven Office - Animated bee office that visualizes Claude Code activity with ElevenLabs voice",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "setup-hooks": "node dist/setup-hooks.js",
+    "setup-relay": "tsx src/setup-relay.ts"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.34.0",
+    "chokidar": "^4.0.0",
+    "express": "^4.21.0",
+    "firebase-admin": "^13.0.0",
+    "pixi.js": "^8.16.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

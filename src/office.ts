@@ -1,0 +1,366 @@
+// ============================================================================
+// BeeHaven Office - Office State Engine
+// Maps Claude Code events to bee character positions and activities
+// ============================================================================
+
+import type {
+  BeeCharacter,
+  BeeActivity,
+  ChatMessage,
+  ClaudeEvent,
+  EventLogEntry,
+  OfficeState,
+  OfficeStats,
+  Room,
+  RoomDef,
+} from './types.js';
+
+/** Office room layout — WeWork single-team office (half-scale for PixiJS doubling) */
+export const ROOMS: RoomDef[] = [
+  { id: 'lobby',        label: 'Lobby',         x: 20,  y: 200, width: 100, height: 30,  color: '#FEF3C7' },
+  { id: 'desk',         label: 'Team Office',   x: 125, y: 20,  width: 300, height: 170, color: '#DBEAFE' },
+  { id: 'phone-a',      label: 'Phone Booth',   x: 20,  y: 20,  width: 40,  height: 50,  color: '#E0F2FE' },
+  { id: 'phone-b',      label: 'Phone Booth',   x: 530, y: 20,  width: 40,  height: 50,  color: '#E0F2FE' },
+  { id: 'server-room',  label: 'Server Closet', x: 500, y: 235, width: 60,  height: 80,  color: '#FEE2E2' },
+  { id: 'meeting-room', label: 'Meeting Room',  x: 20,  y: 235, width: 100, height: 100, color: '#D1FAE5' },
+  { id: 'water-cooler', label: 'Lounge',        x: 320, y: 235, width: 125, height: 100, color: '#E0F2FE' },
+  { id: 'coffee',       label: 'Kitchen',       x: 170, y: 235, width: 100, height: 100, color: '#FED7AA' },
+];
+
+/** Get center position of a room */
+function roomCenter(room: Room): { x: number; y: number } {
+  const r = ROOMS.find((rm) => rm.id === room)!;
+  return {
+    x: r.x + r.width / 2 + (Math.random() - 0.5) * (r.width * 0.4),
+    y: r.y + r.height / 2 + (Math.random() - 0.5) * (r.height * 0.3),
+  };
+}
+
+/** Map tool names to rooms */
+function toolToRoom(toolName: string): Room {
+  switch (toolName) {
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit':
+      return 'desk';
+    case 'Read':
+    case 'Glob':
+    case 'Grep':
+    case 'WebFetch':
+    case 'WebSearch':
+      return 'desk';
+    case 'Bash':
+      return 'server-room';
+    case 'Task':
+      return 'meeting-room';
+    default:
+      return 'desk';
+  }
+}
+
+/** Map tool names to activities */
+function toolToActivity(toolName: string): BeeActivity {
+  switch (toolName) {
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit':
+      return 'coding';
+    case 'Read':
+    case 'Glob':
+    case 'Grep':
+      return 'reading';
+    case 'Bash':
+      return 'running-command';
+    case 'Task':
+      return 'thinking';
+    case 'WebFetch':
+    case 'WebSearch':
+      return 'searching';
+    default:
+      return 'coding';
+  }
+}
+
+/** Event icon mapping */
+function eventIcon(event: string, tool?: string): string {
+  if (tool) {
+    switch (tool) {
+      case 'Edit': case 'Write': return '✏️';
+      case 'Read': return '📖';
+      case 'Glob': case 'Grep': return '🔍';
+      case 'Bash': return '⚡';
+      case 'Task': return '🐝';
+      case 'WebFetch': case 'WebSearch': return '🌐';
+      default: return '🔧';
+    }
+  }
+  switch (event) {
+    case 'SessionStart': return '🚪';
+    case 'UserPromptSubmit': return '💬';
+    case 'Stop': return '🎤';
+    case 'SessionEnd': return '👋';
+    case 'SubagentStart': return '🐝';
+    case 'SubagentStop': return '✅';
+    default: return '📋';
+  }
+}
+
+const BEE_COLORS = ['#F59E0B', '#EF4444', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899'];
+
+export class Office {
+  state: OfficeState;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    const queenPos = roomCenter('lobby');
+    const recruiterPos = roomCenter('meeting-room');
+    this.state = {
+      bees: [
+        {
+          id: 'queen',
+          name: 'Claude',
+          role: 'queen',
+          room: 'lobby',
+          activity: 'idle',
+          x: queenPos.x,
+          y: queenPos.y,
+          targetX: queenPos.x,
+          targetY: queenPos.y,
+          color: '#F59E0B',
+        },
+        {
+          id: 'recruiter',
+          name: 'Recruiter',
+          role: 'recruiter',
+          room: 'meeting-room',
+          activity: 'idle',
+          x: recruiterPos.x,
+          y: recruiterPos.y,
+          targetX: recruiterPos.x,
+          targetY: recruiterPos.y,
+          color: '#EC4899',
+          message: 'Ready to help you create bee agents!',
+        },
+      ],
+      sessionActive: false,
+      eventLog: [],
+      stats: {
+        toolCalls: 0,
+        filesRead: 0,
+        filesWritten: 0,
+        commandsRun: 0,
+        errors: 0,
+      },
+      chat: { messages: [], isProcessing: false },
+      agentScripts: [],
+    };
+  }
+
+  /** Process a Claude Code event and update office state */
+  processEvent(event: ClaudeEvent): { speechText?: string } {
+    const queen = this.state.bees[0];
+    let speechText: string | undefined;
+
+    // Reset idle timer
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.goIdle(), 8000);
+
+    switch (event.hook_event_name) {
+      case 'SessionStart': {
+        this.state.sessionActive = true;
+        this.state.stats.sessionStartTime = event.timestamp;
+        this.moveBee(queen, 'lobby', 'arriving');
+        queen.message = 'Good morning! Starting work...';
+        this.log('SessionStart', 'Session started', eventIcon('SessionStart'));
+        speechText = 'Starting a new session. Let me see what we are working on.';
+        break;
+      }
+
+      case 'UserPromptSubmit': {
+        this.moveBee(queen, 'meeting-room', 'thinking');
+        const prompt = event.prompt || '';
+        const shortPrompt = prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt;
+        queen.message = `Hmm... "${shortPrompt}"`;
+        this.log('UserPromptSubmit', shortPrompt, eventIcon('UserPromptSubmit'));
+        speechText = `Let me think about this. ${shortPrompt}`;
+        break;
+      }
+
+      case 'PreToolUse': {
+        const tool = event.tool_name || 'unknown';
+        const room = toolToRoom(tool);
+        const activity = toolToActivity(tool);
+        this.moveBee(queen, room, activity);
+        this.state.currentTool = tool;
+        this.state.stats.toolCalls++;
+
+        let detail = tool;
+        if (event.tool_input) {
+          if ('file_path' in event.tool_input) {
+            const fp = String(event.tool_input.file_path);
+            detail = `${tool}: ${fp.split('/').pop()}`;
+          } else if ('command' in event.tool_input) {
+            const cmd = String(event.tool_input.command);
+            detail = `${tool}: ${cmd.length > 40 ? cmd.slice(0, 40) + '...' : cmd}`;
+          } else if ('pattern' in event.tool_input) {
+            detail = `${tool}: ${event.tool_input.pattern}`;
+          }
+        }
+
+        queen.message = detail;
+        this.log('PreToolUse', detail, eventIcon('PreToolUse', tool));
+
+        // Update stats
+        if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') this.state.stats.filesRead++;
+        if (tool === 'Edit' || tool === 'Write') this.state.stats.filesWritten++;
+        if (tool === 'Bash') this.state.stats.commandsRun++;
+        break;
+      }
+
+      case 'PostToolUse': {
+        const tool = event.tool_name || 'unknown';
+        queen.message = `Done: ${tool} ✓`;
+        this.log('PostToolUse', `${tool} completed`, eventIcon('PostToolUse', tool));
+        break;
+      }
+
+      case 'PostToolUseFailure': {
+        const tool = event.tool_name || 'unknown';
+        this.state.stats.errors++;
+        queen.activity = 'thinking';
+        queen.message = `${tool} failed! Rethinking...`;
+        this.log('PostToolUseFailure', `${tool} error: ${event.error || 'unknown'}`, '❌');
+        speechText = `Hmm, that didn't work. Let me try a different approach.`;
+        break;
+      }
+
+      case 'Stop': {
+        this.moveBee(queen, 'meeting-room', 'presenting');
+        queen.message = 'Here are my results!';
+        this.log('Stop', 'Response complete', eventIcon('Stop'));
+        break;
+      }
+
+      case 'SubagentStart': {
+        const agentId = event.agent_id || `worker-${this.state.bees.length}`;
+        const agentType = event.agent_type || 'worker';
+        const room = agentType === 'Bash' ? 'server-room' : agentType === 'Explore' ? 'desk' : 'desk';
+        const pos = roomCenter(room);
+        const color = BEE_COLORS[this.state.bees.length % BEE_COLORS.length];
+
+        this.state.bees.push({
+          id: agentId,
+          name: agentType,
+          role: 'worker',
+          room,
+          activity: 'walking',
+          x: queen.x,
+          y: queen.y,
+          targetX: pos.x,
+          targetY: pos.y,
+          color,
+          message: `On it, boss!`,
+        });
+
+        this.log('SubagentStart', `Worker bee "${agentType}" deployed`, '🐝');
+        speechText = `Sending a worker bee to handle ${agentType}.`;
+        break;
+      }
+
+      case 'SubagentStop': {
+        const agentId = event.agent_id;
+        const idx = this.state.bees.findIndex((b) => b.id === agentId);
+        if (idx > 0) {
+          const bee = this.state.bees[idx];
+          bee.activity = 'celebrating';
+          bee.message = 'Task complete!';
+          // Remove after delay
+          setTimeout(() => {
+            const i = this.state.bees.findIndex((b) => b.id === agentId);
+            if (i > 0) this.state.bees.splice(i, 1);
+          }, 3000);
+        }
+        this.log('SubagentStop', `Worker returned`, '✅');
+        break;
+      }
+
+      case 'SessionEnd': {
+        this.state.sessionActive = false;
+        this.moveBee(queen, 'lobby', 'idle');
+        queen.message = 'See you next time!';
+        this.log('SessionEnd', 'Session ended', eventIcon('SessionEnd'));
+        speechText = 'Session complete. See you next time!';
+        break;
+      }
+    }
+
+    this.state.currentEvent = event.hook_event_name;
+    return { speechText };
+  }
+
+  /** Move a bee to a new room */
+  private moveBee(bee: BeeCharacter, room: Room, activity: BeeActivity) {
+    bee.room = room;
+    bee.activity = activity;
+    const pos = roomCenter(room);
+    bee.targetX = pos.x;
+    bee.targetY = pos.y;
+  }
+
+  /** Transition to idle state */
+  private goIdle() {
+    const queen = this.state.bees[0];
+    const idleRooms: Room[] = ['water-cooler', 'coffee'];
+    const room = idleRooms[Math.floor(Math.random() * idleRooms.length)];
+    const idleActivities: BeeActivity[] = ['drinking-coffee', 'chatting', 'idle'];
+    const activity = idleActivities[Math.floor(Math.random() * idleActivities.length)];
+    this.moveBee(queen, room, activity);
+    queen.message = activity === 'drinking-coffee' ? 'Coffee break ☕' : 'Waiting for instructions...';
+  }
+
+  /** Add entry to event log */
+  private log(event: string, detail: string, icon: string) {
+    this.state.eventLog.unshift({
+      timestamp: new Date().toISOString(),
+      event,
+      detail,
+      icon,
+    });
+    // Keep last 50 entries
+    if (this.state.eventLog.length > 50) {
+      this.state.eventLog.length = 50;
+    }
+  }
+
+  /** Update recruiter bee state during chat interactions */
+  updateRecruiterState(activity: BeeActivity, room: Room, message: string) {
+    const recruiter = this.state.bees.find(b => b.id === 'recruiter');
+    if (recruiter) {
+      this.moveBee(recruiter, room, activity);
+      recruiter.message = message;
+    }
+  }
+
+  /** Add a chat message to session */
+  addChatMessage(msg: ChatMessage) {
+    if (!this.state.chat) {
+      this.state.chat = { messages: [], isProcessing: false };
+    }
+    this.state.chat.messages.push(msg);
+    if (this.state.chat.messages.length > 50) {
+      this.state.chat.messages = this.state.chat.messages.slice(-50);
+    }
+  }
+
+  /** Set chat processing state */
+  setChatProcessing(isProcessing: boolean) {
+    if (!this.state.chat) {
+      this.state.chat = { messages: [], isProcessing: false };
+    }
+    this.state.chat.isProcessing = isProcessing;
+  }
+
+  getState(): OfficeState {
+    return this.state;
+  }
+}
