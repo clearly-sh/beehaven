@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BeeHaven Office — Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #1E1B18;
+      --bg-card: #2A2622;
+      --text: #E8E2DA;
+      --text-muted: #7A746D;
+      --accent: #F5C542;
+      --accent-dim: rgba(245, 197, 66, 0.15);
+      --blue: #60A5FA;
+      --green: #4ADE80;
+      --red: #EF4444;
+      --border: rgba(255, 255, 255, 0.06);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+    .docs-header {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      background: rgba(30, 27, 24, 0.95);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    .docs-header .logo { font-size: 28px; }
+    .docs-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .docs-header h1 span { color: var(--accent); }
+    .docs-header a {
+      margin-left: auto;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border: 1px solid var(--accent-dim);
+      border-radius: 6px;
+    }
+    .docs-header a:hover { background: var(--accent-dim); }
+
+    .docs-nav {
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .docs-nav a {
+      display: block;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+    }
+    .docs-nav a:hover, .docs-nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .docs-body {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 32px 80px;
+    }
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--accent);
+    }
+    h3 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+    p { margin-bottom: 12px; color: var(--text); font-size: 14px; }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title .emoji { font-size: 18px; }
+    .card-desc { font-size: 13px; color: var(--text-muted); }
+
+    .room-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .room-card { padding: 14px 16px; }
+    .room-card .room-name { font-weight: 600; font-size: 14px; }
+    .room-card .room-trigger { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 12px 0;
+    }
+    th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .kbd {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+    .flow-diagram {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      font-family: 'SF Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.8;
+    }
+    .flow-diagram .hl { color: var(--accent); }
+    .flow-diagram .bl { color: var(--blue); }
+    .flow-diagram .gr { color: var(--green); }
+
+    @media (max-width: 640px) {
+      .docs-body { padding: 24px 16px 60px; }
+      .room-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="docs-header">
+    <span class="logo">&#x1F41D;</span>
+    <h1>BeeHaven <span>Docs</span></h1>
+    <a href="/">Back to Office</a>
+  </div>
+
+  <nav class="docs-nav">
+    <a href="#getting-started" class="active">Getting Started</a>
+    <a href="#rooms">Rooms</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#shop">Shop</a>
+    <a href="#events">Events</a>
+  </nav>
+
+  <div class="docs-body">
+
+    <!-- Getting Started -->
+    <section id="getting-started">
+      <h2>Getting Started</h2>
+      <p>BeeHaven Office visualizes your Claude Code activity as an animated bee office. Each tool call, prompt, and response moves bee characters between rooms in real-time.</p>
+
+      <h3>1. Install &amp; Run</h3>
+      <div class="card">
+        <div class="card-desc">
+          <code>cd beehaven_office && npm install && npm run dev</code><br>
+          Opens at <code>http://localhost:3333</code>
+        </div>
+      </div>
+
+      <h3>2. Configure Hooks</h3>
+      <div class="card">
+        <div class="card-desc">
+          <code>npm run setup-hooks</code><br>
+          This writes hook entries to <code>.claude/settings.local.json</code> so Claude Code sends events to BeeHaven.
+        </div>
+      </div>
+
+      <h3>3. Start Using Claude Code</h3>
+      <p>Open a Claude Code session in any project. BeeHaven will detect events and animate bees accordingly. The queen bee (Claude) moves between rooms based on what tool is being used.</p>
+
+      <h3>Optional: Voice</h3>
+      <div class="card">
+        <div class="card-desc">
+          Set <code>ELEVENLABS_API_KEY=sk-...</code> to enable TTS narration and STT voice input.
+        </div>
+      </div>
+    </section>
+
+    <!-- Rooms -->
+    <section id="rooms">
+      <h2>Room Guide</h2>
+      <p>The office has 8 rooms. Bees move to different rooms based on what Claude Code is doing.</p>
+
+      <div class="room-grid">
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x1F3E2;</span> Reception (Lobby)</div>
+          <div class="room-trigger">Triggered by: Session start/end</div>
+          <div class="card-desc">Where bees arrive and depart. The queen starts here at session begin.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x1F4BB;</span> Team Office (Desk)</div>
+          <div class="room-trigger">Triggered by: Read, Write, Edit, Glob, Grep</div>
+          <div class="card-desc">Main workspace with 6 desks + standing desk. Where coding and file reading happen.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x1F4DE;</span> Phone Booths (A &amp; B)</div>
+          <div class="room-trigger">Triggered by: Private calls</div>
+          <div class="card-desc">Two private phone booths for focused work.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x26A1;</span> Server Room</div>
+          <div class="room-trigger">Triggered by: Bash commands</div>
+          <div class="card-desc">Where terminal commands run. Server racks with blinking LEDs.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x1F91D;</span> Conference Room</div>
+          <div class="room-trigger">Triggered by: User prompts, Task tool, Stop</div>
+          <div class="card-desc">Meeting table with 10 chairs. For thinking and presenting results.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x2615;</span> Kitchen</div>
+          <div class="room-trigger">Triggered by: Idle (8s timeout)</div>
+          <div class="card-desc">Espresso machine, fruit water dispensers, bar stools. WeWork signature.</div>
+        </div>
+        <div class="card room-card">
+          <div class="card-title"><span class="emoji">&#x1F6CB;</span> Lounge</div>
+          <div class="room-trigger">Triggered by: Idle</div>
+          <div class="card-desc">L-shaped sofa, coffee table, plants. For casual breaks.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Shortcuts -->
+    <section id="shortcuts">
+      <h2>Keyboard Shortcuts</h2>
+      <table>
+        <thead>
+          <tr><th>Shortcut</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">`</span></td><td>Toggle terminal window</td></tr>
+          <tr><td><span class="kbd">Escape</span></td><td>Close shop popover</td></tr>
+          <tr><td><span class="kbd">0</span>-<span class="kbd">9</span></td><td>PIN input on login screen</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <p>BeeHaven follows a unidirectional data flow from Claude Code hooks to the animated canvas.</p>
+
+      <div class="flow-diagram">
+<span class="hl">Claude Code Hooks</span>
+    &#x2502;
+    &#x25BC;
+<span class="bl">/tmp/beehaven-events.jsonl</span>
+    &#x2502;
+    &#x25BC;
+<span class="hl">Watcher</span> (chokidar, 100ms poll)
+    &#x2502;
+    &#x25BC;
+<span class="hl">Office</span> (state machine: events &#x2192; room + activity)
+    &#x2502;
+    &#x25BC;
+<span class="bl">WebSocket</span> (state broadcast every 500ms)
+    &#x2502;
+    &#x25BC;
+<span class="gr">PixiJS Canvas</span> (GPU-accelerated 2D at 1480&#xD7;1040)
+      </div>
+
+      <h3>Key Components</h3>
+      <table>
+        <thead>
+          <tr><th>File</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>src/watcher.ts</code></td><td>Polls JSONL file for new events, emits ClaudeEvent objects</td></tr>
+          <tr><td><code>src/office.ts</code></td><td>State machine mapping events to bee positions/activities</td></tr>
+          <tr><td><code>src/server.ts</code></td><td>Express + WebSocket server, pushes state to browsers</td></tr>
+          <tr><td><code>src/voice.ts</code></td><td>ElevenLabs TTS/STT integration</td></tr>
+          <tr><td><code>public/office.js</code></td><td>PixiJS canvas renderer with A* pathfinding</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Shop -->
+    <section id="shop">
+      <h2>Bee Shop</h2>
+      <p>Earn honey by using Claude Code. Spend it on skins and accessories for your queen bee.</p>
+
+      <h3>Honey Rewards</h3>
+      <table>
+        <thead>
+          <tr><th>Event</th><th>Honey</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Session Start</td><td>+5</td></tr>
+          <tr><td>User Prompt</td><td>+2</td></tr>
+          <tr><td>Tool Use</td><td>+1</td></tr>
+          <tr><td>Tool Complete</td><td>+1</td></tr>
+          <tr><td>Response Complete</td><td>+3</td></tr>
+          <tr><td>Worker Bee Deployed</td><td>+2</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Items</h3>
+      <p>Skins change the queen bee's body color. Accessories add visual flair. Items persist across sessions in <code>~/.beehaven/config.json</code>.</p>
+    </section>
+
+    <!-- Events -->
+    <section id="events">
+      <h2>Hook Events</h2>
+      <p>BeeHaven responds to these Claude Code hook events:</p>
+
+      <table>
+        <thead>
+          <tr><th>Event</th><th>Bee Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>SessionStart</code></td><td>Queen arrives in Lobby</td></tr>
+          <tr><td><code>UserPromptSubmit</code></td><td>Queen moves to Conference Room, thinks</td></tr>
+          <tr><td><code>PreToolUse</code> (Read/Glob/Grep)</td><td>Queen moves to Team Office</td></tr>
+          <tr><td><code>PreToolUse</code> (Edit/Write)</td><td>Queen moves to Team Office</td></tr>
+          <tr><td><code>PreToolUse</code> (Bash)</td><td>Queen moves to Server Room</td></tr>
+          <tr><td><code>PreToolUse</code> (Task)</td><td>Queen moves to Conference Room</td></tr>
+          <tr><td><code>PostToolUse</code></td><td>Activity completed indicator</td></tr>
+          <tr><td><code>PostToolUseFailure</code></td><td>Error state, queen rethinks</td></tr>
+          <tr><td><code>Stop</code></td><td>Queen moves to Conference Room, presents</td></tr>
+          <tr><td><code>SubagentStart</code></td><td>Worker bee spawns, walks to assigned room</td></tr>
+          <tr><td><code>SubagentStop</code></td><td>Worker bee celebrates, then disappears</td></tr>
+          <tr><td><code>SessionEnd</code></td><td>Queen returns to Lobby</td></tr>
+          <tr><td><em>(idle 8s)</em></td><td>Queen wanders to Kitchen or Lounge</td></tr>
+        </tbody>
+      </table>
+
+      <h3>WebSocket Messages</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Direction</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>state</code></td><td>Server &#x2192; Client</td><td>Full office state (bees, stats, shop, logs)</td></tr>
+          <tr><td><code>event</code></td><td>Server &#x2192; Client</td><td>Event notification flash</td></tr>
+          <tr><td><code>response</code></td><td>Server &#x2192; Client</td><td>User/Claude text for terminal</td></tr>
+          <tr><td><code>speech</code></td><td>Server &#x2192; Client</td><td>TTS audio + subtitle text</td></tr>
+          <tr><td><code>voice-toggle</code></td><td>Client &#x2192; Server</td><td>Enable/disable TTS</td></tr>
+          <tr><td><code>shop-purchase</code></td><td>Client &#x2192; Server</td><td>Buy a shop item</td></tr>
+          <tr><td><code>shop-equip</code></td><td>Client &#x2192; Server</td><td>Equip an owned item</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+
+  <script>
+    // Highlight active nav on scroll
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.docs-nav a');
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY + 120;
+      for (const section of sections) {
+        if (section.offsetTop <= y && section.offsetTop + section.offsetHeight > y) {
+          navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + section.id));
+        }
+      }
+    });
+  </script>
+</body>
+</html>
