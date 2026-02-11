@@ -51,6 +51,9 @@ const ROOMS = [
 const AMBIENT_BEES = [
   { id: 'omni-artist',  name: 'OmniArtist',   homeRoom: 'desk',         color: 0x8B5CF6, accessory: 'beret' },
   { id: 'omni-manager', name: 'OmniManager',  homeRoom: 'meeting-room', color: 0x3B82F6, accessory: 'glasses' },
+  { id: 'coder-1',      name: 'DevBee',       homeRoom: 'desk',         color: 0x22C55E, accessory: 'coder' },
+  { id: 'coder-2',      name: 'StackBee',     homeRoom: 'desk',         color: 0x06B6D4, accessory: 'coder' },
+  { id: 'coder-3',      name: 'ByteBee',      homeRoom: 'desk',         color: 0xF97316, accessory: 'coder' },
 ];
 
 // --- State ---
@@ -64,10 +67,47 @@ let frame = 0;
 let voiceEnabled = false;
 let audioQueue = [];
 let isPlaying = false;
+let currentAudioSource = null; // Reference to playing AudioBufferSourceNode for stop
 let chatOpen = false;
 let recording = false;
 let mediaRecorder = null;
-let lastLogCount = 0;
+let projectFilter = null;  // null = show all, string = filter to that project
+let lastEventLogKey = '';  // fingerprint to avoid re-rendering unchanged event log
+let lastShopKey = '';      // fingerprint for shop panel
+let lastHoney = 0;         // track honey for earning animation
+let lastQueenZone = 'upper'; // track queen zone for elevator
+
+// --- Elevator Constants ---
+const ELEV = {
+  shaftX: 920, shaftY: 80, shaftW: 60, shaftH: 580,
+  cabW: 56, cabH: 84,
+  upperStopY: 100,
+  lowerStopY: 500,
+  doorW: 26, doorH: 84,
+  upperDoorY: 98,
+  lowerDoorY: 498,
+  doorSpeed: 0.04,
+  moveSpeed: 0.025,
+  holdFrames: 90,
+};
+
+const UPPER_ROOMS = new Set(['desk', 'phone-a', 'phone-b', 'lobby']);
+const LOWER_ROOMS = new Set(['meeting-room', 'coffee', 'water-cooler', 'server-room']);
+
+let elevator = {
+  state: 'idle',
+  currentFloor: 1,
+  targetFloor: 1,
+  cabY: ELEV.upperStopY,
+  doorProgress: 0,
+  holdTimer: 0,
+  dingTimer: 0,
+  cabGfx: null,
+  upperDoorL: null, upperDoorR: null,
+  lowerDoorL: null, lowerDoorR: null,
+  upperMask: null, lowerMask: null,
+  indicatorText: null, indicatorBg: null,
+};
 
 // --- Init ---
 async function init() {
@@ -95,12 +135,14 @@ async function init() {
   drawFloor();
   drawRooms();
   drawFurniture();
+  createElevator();
   initAmbientBees();
 
   // Animation loop
   app.ticker.add(() => {
     frame++;
     updateAllBees();
+    updateElevator();
   });
 
   // Connect WebSocket
@@ -353,7 +395,7 @@ function drawFurniture() {
   drawPlant(g, 246, 365);
   drawPlant(g, 852, 365);
   drawPlant(g, 330, 460);
-  drawPlant(g, 920, 460);
+  drawPlant(g, 895, 460);
   drawPlant(g, 1160, 280);
   drawPlant(g, 1300, 220);
 
@@ -401,6 +443,256 @@ function drawPlant(g, x, y, size = 1, potColor) {
   for (const [lx, ly] of leafPositions) {
     const leafColor = ((lx + ly) & 1) ? P.plant : P.plantDark;
     g.ellipse(x + lx * s * 0.8, y + ly * s * 0.7, 7 * s, 5 * s).fill(leafColor);
+  }
+}
+
+// --- Elevator ---
+function createElevator() {
+  const { shaftX: sx, shaftY: sy, shaftW: sw, shaftH: sh,
+          cabW, cabH, upperStopY, lowerStopY,
+          doorW, doorH, upperDoorY, lowerDoorY } = ELEV;
+
+  // ── Static shaft ──
+  const shaft = new Graphics();
+
+  // Shaft background
+  shaft.roundRect(sx, sy, sw, sh, 4).fill({ color: P.wall, alpha: 0.35 });
+  shaft.roundRect(sx, sy, sw, sh, 4).stroke({ color: P.wallDark, width: 1.5 });
+
+  // Guide rails
+  shaft.moveTo(sx + 4, sy + 4).lineTo(sx + 4, sy + sh - 4).stroke({ color: P.wallDark, width: 1, alpha: 0.25 });
+  shaft.moveTo(sx + sw - 4, sy + 4).lineTo(sx + sw - 4, sy + sh - 4).stroke({ color: P.wallDark, width: 1, alpha: 0.25 });
+
+  // Upper door frame
+  shaft.roundRect(sx + 1, upperDoorY - 2, sw - 2, doorH + 4, 2).stroke({ color: P.glassBrd, width: 2 });
+
+  // Lower door frame
+  shaft.roundRect(sx + 1, lowerDoorY - 2, sw - 2, doorH + 4, 2).stroke({ color: P.glassBrd, width: 2 });
+
+  // Cable from top to cab anchor
+  shaft.moveTo(sx + sw / 2, sy + 4).lineTo(sx + sw / 2, sy + 20).stroke({ color: P.wallDark, width: 1.5 });
+
+  layers.furniture.addChild(shaft);
+
+  // ── Cab ──
+  const cab = new Graphics();
+  // Body (glass + metal)
+  cab.roundRect(0, 0, cabW, cabH, 4).fill({ color: P.glass, alpha: 0.6 });
+  cab.roundRect(0, 0, cabW, cabH, 4).stroke({ color: P.glassBrd, width: 2 });
+  // Brass accent strip (top)
+  cab.roundRect(2, 0, cabW - 4, 3, 1.5).fill(P.honey);
+  // Ceiling LED light
+  cab.roundRect(10, 5, 36, 3, 1).fill({ color: 0xfef3c7, alpha: 0.9 });
+  // Handrails
+  cab.roundRect(4, 30, 2, 24, 1).fill(P.wallDark);
+  cab.roundRect(cabW - 6, 30, 2, 24, 1).fill(P.wallDark);
+  // Wood floor
+  cab.roundRect(3, cabH - 10, cabW - 6, 7, 2).fill(P.wood);
+
+  cab.x = sx + 2;
+  cab.y = upperStopY;
+  layers.furniture.addChild(cab);
+  elevator.cabGfx = cab;
+
+  // ── Doors (4 panels, 2 per stop) ──
+  function makeDoor() {
+    const d = new Graphics();
+    d.rect(0, 0, doorW, doorH).fill({ color: P.wall, alpha: 0.85 });
+    d.rect(0, 0, doorW, doorH).stroke({ color: P.glassBrd, width: 1 });
+    // Brushed metal detail
+    d.roundRect(doorW / 2 - 4, doorH / 2 - 6, 8, 12, 1).fill({ color: P.wallDark, alpha: 0.15 });
+    return d;
+  }
+
+  // Upper doors
+  elevator.upperDoorL = makeDoor();
+  elevator.upperDoorL.x = sx + 2;
+  elevator.upperDoorL.y = upperDoorY;
+  elevator.upperDoorR = makeDoor();
+  elevator.upperDoorR.x = sx + 2 + doorW;
+  elevator.upperDoorR.y = upperDoorY;
+
+  // Lower doors
+  elevator.lowerDoorL = makeDoor();
+  elevator.lowerDoorL.x = sx + 2;
+  elevator.lowerDoorL.y = lowerDoorY;
+  elevator.lowerDoorR = makeDoor();
+  elevator.lowerDoorR.x = sx + 2 + doorW;
+  elevator.lowerDoorR.y = lowerDoorY;
+
+  // Masks so doors clip behind shaft walls
+  const upperMask = new Graphics();
+  upperMask.rect(sx + 1, upperDoorY - 1, sw - 2, doorH + 2).fill(0xffffff);
+  elevator.upperMask = upperMask;
+
+  const lowerMask = new Graphics();
+  lowerMask.rect(sx + 1, lowerDoorY - 1, sw - 2, doorH + 2).fill(0xffffff);
+  elevator.lowerMask = lowerMask;
+
+  // Group upper doors into a container with mask
+  const upperDoorGroup = new Container();
+  upperDoorGroup.addChild(elevator.upperDoorL, elevator.upperDoorR);
+  upperDoorGroup.mask = upperMask;
+  layers.furniture.addChild(upperMask, upperDoorGroup);
+
+  // Group lower doors into a container with mask
+  const lowerDoorGroup = new Container();
+  lowerDoorGroup.addChild(elevator.lowerDoorL, elevator.lowerDoorR);
+  lowerDoorGroup.mask = lowerMask;
+  layers.furniture.addChild(lowerMask, lowerDoorGroup);
+
+  // ── Floor indicator ──
+  const indBg = new Graphics();
+  indBg.roundRect(0, 0, 24, 16, 3).fill(P.monitor);
+  indBg.x = sx + 18;
+  indBg.y = sy + 2;
+  layers.furniture.addChild(indBg);
+  elevator.indicatorBg = indBg;
+
+  const indText = new Text({
+    text: '1',
+    style: new TextStyle({
+      fontFamily: 'SF Mono, Fira Code, monospace',
+      fontSize: 10,
+      fontWeight: '700',
+      fill: P.led,
+    }),
+  });
+  indText.anchor.set(0.5, 0.5);
+  indText.x = sx + 30;
+  indText.y = sy + 10;
+  layers.furniture.addChild(indText);
+  elevator.indicatorText = indText;
+
+  // "Elevator" label below shaft
+  const label = new Text({
+    text: 'Elevator',
+    style: new TextStyle({
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 10,
+      fontWeight: '600',
+      fill: 0x7A746D,
+    }),
+  });
+  label.anchor.set(0.5, 0);
+  label.x = sx + sw / 2;
+  label.y = sy + sh + 4;
+  layers.furniture.addChild(label);
+}
+
+function getQueenZone() {
+  const queen = localBees['queen'];
+  if (!queen) return null;
+  if (UPPER_ROOMS.has(queen.room)) return 'upper';
+  if (LOWER_ROOMS.has(queen.room)) return 'lower';
+  return null;
+}
+
+function updateElevator() {
+  if (!elevator.cabGfx) return;
+
+  const { shaftX: sx, doorW, upperStopY, lowerStopY, upperDoorY, lowerDoorY,
+          doorSpeed, moveSpeed, holdFrames } = ELEV;
+
+  // ── Detect queen zone change ──
+  const zone = getQueenZone();
+  if (zone && zone !== lastQueenZone) {
+    lastQueenZone = zone;
+    const destFloor = zone === 'upper' ? 1 : 2;
+    if (destFloor !== elevator.currentFloor) {
+      elevator.targetFloor = destFloor;
+      if (elevator.state === 'idle') {
+        elevator.state = 'doors-closing';
+      } else if (elevator.state === 'doors-open') {
+        elevator.holdTimer = 0; // cut short the hold
+      }
+    }
+  }
+
+  // ── State machine ──
+  switch (elevator.state) {
+    case 'idle':
+      break;
+
+    case 'doors-closing':
+      elevator.doorProgress = Math.max(0, elevator.doorProgress - doorSpeed);
+      if (elevator.doorProgress <= 0) {
+        elevator.doorProgress = 0;
+        elevator.state = 'moving';
+      }
+      break;
+
+    case 'moving': {
+      const targetY = elevator.targetFloor === 1 ? upperStopY : lowerStopY;
+      elevator.cabY += (targetY - elevator.cabY) * moveSpeed;
+      if (Math.abs(elevator.cabY - targetY) < 1) {
+        elevator.cabY = targetY;
+        elevator.currentFloor = elevator.targetFloor;
+        elevator.state = 'doors-opening';
+      }
+      break;
+    }
+
+    case 'doors-opening':
+      elevator.doorProgress = Math.min(1, elevator.doorProgress + doorSpeed);
+      if (elevator.doorProgress >= 1) {
+        elevator.doorProgress = 1;
+        elevator.state = 'doors-open';
+        elevator.holdTimer = holdFrames;
+        elevator.dingTimer = 15; // ding flash
+      }
+      break;
+
+    case 'doors-open':
+      elevator.holdTimer--;
+      if (elevator.dingTimer > 0) elevator.dingTimer--;
+      if (elevator.holdTimer <= 0) {
+        elevator.state = 'doors-closing-final';
+      }
+      break;
+
+    case 'doors-closing-final':
+      elevator.doorProgress = Math.max(0, elevator.doorProgress - doorSpeed);
+      if (elevator.doorProgress <= 0) {
+        elevator.doorProgress = 0;
+        elevator.state = 'idle';
+      }
+      break;
+  }
+
+  // ── Apply cab position ──
+  elevator.cabGfx.y = elevator.cabY;
+
+  // ── Apply door positions ──
+  // Only the doors at the current floor open; other floor's doors stay closed
+  const atUpper = elevator.currentFloor === 1;
+  const upperOffset = atUpper ? elevator.doorProgress * doorW : 0;
+  const lowerOffset = !atUpper ? elevator.doorProgress * doorW : 0;
+
+  elevator.upperDoorL.x = sx + 2 - upperOffset;
+  elevator.upperDoorR.x = sx + 2 + doorW + upperOffset;
+  elevator.lowerDoorL.x = sx + 2 - lowerOffset;
+  elevator.lowerDoorR.x = sx + 2 + doorW + lowerOffset;
+
+  // ── Floor indicator ──
+  if (elevator.state === 'moving') {
+    elevator.indicatorText.text = elevator.targetFloor === 1 ? '\u25B2' : '\u25BC';
+  } else {
+    elevator.indicatorText.text = String(elevator.currentFloor);
+  }
+
+  // Ding flash: indicator briefly turns gold when doors open
+  if (elevator.dingTimer > 0) {
+    elevator.indicatorText.style.fill = P.honey;
+  } else {
+    elevator.indicatorText.style.fill = P.led;
+  }
+
+  // Subtle ceiling light flicker while moving
+  if (elevator.state === 'moving') {
+    elevator.cabGfx.alpha = 0.85 + Math.sin(frame * 0.3) * 0.15;
+  } else {
+    elevator.cabGfx.alpha = 1;
   }
 }
 
@@ -526,7 +818,7 @@ function createBeeGraphics(bee) {
       fontSize: 9,
       fill: 0x2D2926,
       wordWrap: true,
-      wordWrapWidth: 140,
+      wordWrapWidth: 200,
       lineHeight: 13,
     }),
   });
@@ -606,6 +898,24 @@ function drawAccessory(container, bee, s, beeColor) {
     g.roundRect(18 * s, 2 * s, 12 * s, 16 * s, 2 * s).fill(0x374151);
     g.roundRect(19 * s, 4 * s, 10 * s, 12 * s, 1 * s).fill({ color: P.monGlow, alpha: 0.3 });
 
+  } else if (accessory === 'coder') {
+    // Headphones (over-ear)
+    g.arc(0, -30 * s, 14 * s, -Math.PI * 0.82, -Math.PI * 0.18).stroke({ color: 0x374151, width: 2.5 * s });
+    g.roundRect(-17 * s, -27 * s, 7 * s, 9 * s, 3 * s).fill(0x374151);
+    g.roundRect(-16 * s, -26 * s, 5 * s, 7 * s, 2 * s).fill(0x1f2937);
+    g.roundRect(10 * s, -27 * s, 7 * s, 9 * s, 3 * s).fill(0x374151);
+    g.roundRect(11 * s, -26 * s, 5 * s, 7 * s, 2 * s).fill(0x1f2937);
+    // Arms holding laptop
+    g.moveTo(-16 * s, -4 * s).lineTo(-22 * s, 6 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+    g.moveTo(16 * s, -4 * s).lineTo(22 * s, 6 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+    // Laptop (open, angled)
+    g.roundRect(-26 * s, 4 * s, 16 * s, 10 * s, 1.5 * s).fill(P.wallDark);
+    g.roundRect(-25 * s, 5 * s, 14 * s, 7 * s, 1 * s).fill({ color: P.monGlow, alpha: 0.3 });
+    // Code lines on screen
+    g.moveTo(-23 * s, 7 * s).lineTo(-15 * s, 7 * s).stroke({ color: 0x4ade80, width: 0.8 * s });
+    g.moveTo(-23 * s, 9 * s).lineTo(-18 * s, 9 * s).stroke({ color: 0x60a5fa, width: 0.8 * s });
+    g.moveTo(-23 * s, 11 * s).lineTo(-16 * s, 11 * s).stroke({ color: 0xfbbf24, width: 0.8 * s });
+
   } else if (role === 'worker') {
     // Wrench in hand
     g.moveTo(16 * s, -4 * s).lineTo(22 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
@@ -627,12 +937,14 @@ function updateSpeechBubble(beeObj, message) {
     return;
   }
 
-  const truncated = message.length > 55 ? message.slice(0, 55) + '...' : message;
+  const maxChars = 120;
+  const truncated = message.length > maxChars ? message.slice(0, maxChars) + '...' : message;
   bubble._text.text = truncated;
+  bubble._text.style.wordWrapWidth = 200;
   bubble.visible = true;
 
   // Redraw background to fit text
-  const tw = Math.min(bubble._text.width + 16, 160);
+  const tw = Math.min(bubble._text.width + 16, 220);
   const th = bubble._text.height + 12;
   bubble._bg.clear();
   bubble._bg.roundRect(0, 0, tw, th, 6).fill({ color: P.white, alpha: 0.95 });
@@ -642,11 +954,12 @@ function updateSpeechBubble(beeObj, message) {
   bubble.x = -tw / 2;
   bubble.y = -th - 30;
 
-  // Auto-hide after 5s
+  // Auto-hide: longer messages stay visible longer
+  const duration = Math.min(3000 + truncated.length * 60, 10000);
   if (beeObj.bubbleTimer) clearTimeout(beeObj.bubbleTimer);
   beeObj.bubbleTimer = setTimeout(() => {
     bubble.visible = false;
-  }, 5000);
+  }, duration);
 }
 
 // --- Ambient Bees ---
@@ -720,6 +1033,9 @@ function syncBees(serverBees) {
     const sx = bee.targetX * COORD_SCALE;
     const sy = bee.targetY * COORD_SCALE;
 
+    // Determine visibility based on project filter
+    const visible = !projectFilter || !bee.project || bee.project === projectFilter;
+
     if (localBees[bee.id]) {
       // Update existing
       const lb = localBees[bee.id];
@@ -727,6 +1043,24 @@ function syncBees(serverBees) {
       lb.targetY = sy;
       lb.room = bee.room;
       lb.activity = bee.activity;
+      lb.gfx.visible = visible;
+
+      // Recreate graphics if skin color changed (e.g. shop equip)
+      if (bee.color && bee.color !== lb.color) {
+        lb.color = bee.color;
+        const oldX = lb.gfx.x;
+        const oldY = lb.gfx.y;
+        layers.bees.removeChild(lb.gfx);
+        lb.gfx.destroy();
+        const newGfx = createBeeGraphics(bee);
+        newGfx.x = oldX;
+        newGfx.y = oldY;
+        newGfx.visible = visible;
+        layers.bees.addChild(newGfx);
+        lb.gfx = newGfx;
+        lb.wingPhase = lb.wingPhase || 0;
+      }
+
       if (bee.message !== lb.lastMessage) {
         lb.lastMessage = bee.message;
         updateSpeechBubble(lb, bee.message);
@@ -740,8 +1074,10 @@ function syncBees(serverBees) {
       gfx.y = startY;
       layers.bees.addChild(gfx);
 
+      gfx.visible = visible;
       localBees[bee.id] = {
         ...bee,
+        color: bee.color,
         drawX: startX,
         drawY: startY,
         targetX: sx,
@@ -795,6 +1131,23 @@ function moveAmbientBeesForContext(serverBees) {
       moveAmbientTo(manager, 'desk');
     } else if (queen.activity === 'idle') {
       moveAmbientTo(manager, 'water-cooler');
+    }
+  }
+
+  // Coder bees — stay at desk when work is happening, wander to kitchen/lounge on idle
+  const coderIds = ['coder-1', 'coder-2', 'coder-3'];
+  for (const cid of coderIds) {
+    const coder = ambientBees[cid];
+    if (!coder) continue;
+    if (queen.activity === 'coding' || queen.activity === 'reading' || queen.activity === 'searching') {
+      moveAmbientTo(coder, 'desk');
+    } else if (queen.activity === 'idle' || queen.activity === 'drinking-coffee') {
+      // Each coder wanders to a different idle spot
+      const idleSpots = ['coffee', 'water-cooler', 'desk'];
+      moveAmbientTo(coder, idleSpots[coderIds.indexOf(cid)]);
+    } else if (queen.activity === 'running-command') {
+      // One coder checks the server room, others stay at desk
+      moveAmbientTo(coder, cid === 'coder-1' ? 'server-room' : 'desk');
     }
   }
 }
@@ -866,6 +1219,7 @@ function connectWS() {
         case 'speech':   handleSpeech(msg.payload);   break;
         case 'chat':     handleChat(msg.payload);     break;
         case 'response': handleResponse(msg.payload); break;
+        case 'shop-result': handleShopResult(msg.payload); break;
       }
     } catch (err) {
       console.warn('[ws] Parse error:', err);
@@ -885,18 +1239,44 @@ function handleState(state) {
     setText('stat-errors', state.stats.errors);
   }
 
+  // Honey counter
+  if (state.shop) {
+    setText('stat-honey', state.shop.honey);
+    // Floating "+N" animation when honey increases
+    if (state.shop.honey > lastHoney && lastHoney > 0) {
+      showHoneyEarned(state.shop.honey - lastHoney);
+    }
+    lastHoney = state.shop.honey;
+    renderShopPanel(state.shop);
+  }
+
   // Session status
   if (state.sessionActive) {
     setConnectionStatus('active', state.currentTool ? `Using ${state.currentTool}` : 'Working...');
   }
 
-  // Sync bees
+  // Update project filter dropdown
+  if (state.projects) {
+    updateProjectDropdown(state.projects);
+  }
+
+  // Sync ALL bees (visibility is toggled inside syncBees based on projectFilter)
   syncBees(state.bees);
 
-  // Event log
-  if (state.eventLog && state.eventLog.length !== lastLogCount) {
-    renderEventLog(state.eventLog);
-    lastLogCount = state.eventLog.length;
+  // Event log (filtered by project)
+  const filteredLog = projectFilter
+    ? state.eventLog.filter(e => !e.project || e.project === projectFilter)
+    : state.eventLog;
+  if (state.eventLog) {
+    renderEventLog(filteredLog);
+  }
+
+  // Terminal log from state (persists across reconnects)
+  if (state.terminalLog) {
+    const filteredTerminal = projectFilter
+      ? state.terminalLog.filter(e => !e.project || e.project === projectFilter)
+      : state.terminalLog;
+    renderTerminalFromState(filteredTerminal);
   }
 
   // Welcome overlay
@@ -922,15 +1302,19 @@ function handleSpeech(payload) {
 
   if (!voiceEnabled || !payload.audio) return;
 
-  // Decode base64 MP3 and queue
+  // Decode base64 MP3 to ArrayBuffer for AudioContext playback
   const binary = atob(payload.audio);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: 'audio/mpeg' });
-  const url = URL.createObjectURL(blob);
+
+  // Cap queue to prevent unbounded memory growth in long sessions
+  if (audioQueue.length >= 10) {
+    console.log('[speech] Queue full, dropping oldest audio');
+    audioQueue.shift();
+  }
 
   console.log(`[speech] Queued audio (${bytes.length} bytes), queue length: ${audioQueue.length + 1}`);
-  audioQueue.push({ url, text: payload.text });
+  audioQueue.push({ buffer: bytes.buffer, text: payload.text });
   if (!isPlaying) playNextAudio();
 }
 
@@ -956,24 +1340,37 @@ function ensureAudioContext() {
   }
 }
 
-function playNextAudio() {
-  if (audioQueue.length === 0) { isPlaying = false; return; }
+async function playNextAudio() {
+  if (audioQueue.length === 0) { isPlaying = false; currentAudioSource = null; return; }
   isPlaying = true;
-  const { url } = audioQueue.shift();
-  const audio = new Audio(url);
-  audio.onended = () => { URL.revokeObjectURL(url); playNextAudio(); };
-  audio.onerror = (e) => {
-    console.error('[speech] Audio error:', e);
-    URL.revokeObjectURL(url);
+  ensureAudioContext();
+
+  const { buffer } = audioQueue.shift();
+
+  try {
+    const audioBuffer = await audioCtx.decodeAudioData(buffer);
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+    source.onended = () => { currentAudioSource = null; playNextAudio(); };
+    currentAudioSource = source;
+    source.start(0);
+    console.log('[speech] Playing audio via AudioContext');
+  } catch (err) {
+    console.error('[speech] Decode/play error:', err);
+    currentAudioSource = null;
     playNextAudio();
-  };
-  audio.play().then(() => {
-    console.log('[speech] Playing audio');
-  }).catch((err) => {
-    console.error('[speech] Play blocked:', err.message);
-    URL.revokeObjectURL(url);
-    playNextAudio();
-  });
+  }
+}
+
+/** Stop all audio playback and flush the queue */
+function stopAllAudio() {
+  audioQueue.length = 0;
+  isPlaying = false;
+  if (currentAudioSource) {
+    try { currentAudioSource.stop(); } catch { /* already stopped */ }
+    currentAudioSource = null;
+  }
 }
 
 function showSubtitle(text) {
@@ -993,6 +1390,12 @@ function renderEventLog(entries) {
 
   // Only render first 30
   const toRender = entries.slice(0, 30);
+
+  // Fingerprint: count + first entry timestamp to avoid DOM thrashing every 500ms
+  const key = toRender.length + ':' + (toRender[0]?.timestamp || '');
+  if (key === lastEventLogKey) return;
+  lastEventLogKey = key;
+
   log.innerHTML = '';
 
   for (const entry of toRender) {
@@ -1015,40 +1418,51 @@ function renderEventLog(entries) {
 
 // --- Terminal / Response Feed ---
 const MAX_TERMINAL_ENTRIES = 100;
+let lastTerminalKey = '';
 
-function handleResponse(payload) {
-  // Only show user input and Claude's conversational output
-  if (payload.event !== 'UserPromptSubmit' && payload.event !== 'Stop') return;
+/** Render terminal from state.terminalLog (persists across reconnects) */
+function renderTerminalFromState(entries) {
+  if (!entries) return;
+  // Fingerprint: count + last entry timestamp to detect real changes
+  const key = entries.length + ':' + (entries[entries.length - 1]?.timestamp || '');
+  if (key === lastTerminalKey) return;
+  lastTerminalKey = key;
 
   const terminal = document.getElementById('terminal-output');
   if (!terminal) return;
 
-  const entry = document.createElement('div');
-  entry.className = 'term-entry';
+  terminal.innerHTML = '';
 
-  const isUser = payload.event === 'UserPromptSubmit';
-  const badge = isUser ? 'user' : 'stop';
-  const label = isUser ? 'GOD' : 'LLM';
+  for (const entry of entries) {
+    const el = document.createElement('div');
+    el.className = 'term-entry';
 
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const isUser = entry.event === 'UserPromptSubmit';
+    const badge = isUser ? 'user' : 'stop';
+    const label = isUser ? 'GOD' : 'LLM';
 
-  let content = payload.content || '';
-  if (content.length > 5000) content = content.slice(0, 5000) + '\n...';
+    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  entry.innerHTML = `
-    <div class="term-prompt">
-      <span class="term-badge ${badge}">${escapeHtml(label)}</span>
-      <span class="term-meta">${time}</span>
-    </div>
-    <div class="term-content">${escapeHtml(content)}</div>
-  `;
+    let content = entry.content || '';
+    if (content.length > 5000) content = content.slice(0, 5000) + '\n...';
 
-  terminal.appendChild(entry);
-  terminal.scrollTop = terminal.scrollHeight;
+    el.innerHTML = `
+      <div class="term-prompt">
+        <span class="term-badge ${badge}">${escapeHtml(label)}</span>
+        <span class="term-meta">${time}</span>
+      </div>
+      <div class="term-content">${escapeHtml(content)}</div>
+    `;
 
-  while (terminal.children.length > MAX_TERMINAL_ENTRIES) {
-    terminal.removeChild(terminal.firstChild);
+    terminal.appendChild(el);
   }
+
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+/** Handle real-time response messages (also flashes terminal tab) */
+function handleResponse(payload) {
+  if (payload.event !== 'UserPromptSubmit' && payload.event !== 'Stop') return;
 
   // Flash the terminal tab if not active
   const termTab = document.querySelector('.sidebar-tab[data-tab="terminal"]');
@@ -1056,6 +1470,22 @@ function handleResponse(payload) {
     termTab.style.color = '#FCD34D';
     setTimeout(() => { if (!termTab.classList.contains('active')) termTab.style.color = ''; }, 2000);
   }
+
+  // Show Claude's actual response text above the queen bee
+  if (payload.event === 'Stop' && payload.content && localBees['queen']) {
+    const text = payload.content.replace(/\s+/g, ' ').trim();
+    if (text.length > 0) {
+      updateSpeechBubble(localBees['queen'], text);
+    }
+  }
+
+  // Show user prompt above queen too
+  if (payload.event === 'UserPromptSubmit' && payload.content && localBees['queen']) {
+    updateSpeechBubble(localBees['queen'], payload.content);
+  }
+
+  // Force re-render on next state (the state broadcast will follow shortly)
+  lastTerminalKey = '';
 }
 
 function initSidebarTabs() {
@@ -1160,29 +1590,47 @@ async function toggleMic() {
     return;
   }
 
+  let stream = null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // Pick a supported mimeType with fallbacks
+    const mimeType = ['audio/webm', 'audio/mp4', 'audio/ogg']
+      .find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const options = mimeType ? { mimeType } : {};
+    const contentType = mimeType || 'audio/webm';
+
+    mediaRecorder = new MediaRecorder(stream, options);
     const chunks = [];
 
     mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
     mediaRecorder.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const blob = new Blob(chunks, { type: contentType });
 
       try {
         const resp = await fetch('/api/transcribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'audio/webm' },
+          headers: { 'Content-Type': contentType },
           body: blob,
         });
         const data = await resp.json();
         if (data.transcript) {
           showSubtitle(`You: ${data.transcript}`);
+        } else {
+          showSubtitle('Voice input failed \u2014 try again');
         }
       } catch (err) {
         console.error('[mic] Upload error:', err);
+        showSubtitle('Voice input failed \u2014 connection error');
       }
+    };
+
+    mediaRecorder.onerror = () => {
+      console.error('[mic] MediaRecorder error');
+      stream.getTracks().forEach(t => t.stop());
+      recording = false;
+      btn.classList.remove('recording');
     };
 
     mediaRecorder.start();
@@ -1190,6 +1638,9 @@ async function toggleMic() {
     btn.classList.add('recording');
   } catch (err) {
     console.error('[mic] Access denied:', err);
+    // Clean up stream if getUserMedia succeeded but MediaRecorder failed
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    showSubtitle('Microphone access denied');
   }
 }
 
@@ -1202,6 +1653,18 @@ function stopRecording() {
 
 // --- UI Binding ---
 function bindUI() {
+  // Sidebar toggle (mobile)
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  document.getElementById('btn-sidebar').addEventListener('click', () => {
+    const open = sidebar.classList.toggle('sidebar-open');
+    backdrop.classList.toggle('active', open);
+  });
+  backdrop.addEventListener('click', () => {
+    sidebar.classList.remove('sidebar-open');
+    backdrop.classList.remove('active');
+  });
+
   document.getElementById('btn-chat').addEventListener('click', toggleChat);
   document.getElementById('btn-chat-close').addEventListener('click', toggleChat);
   document.getElementById('btn-chat-send').addEventListener('click', sendChat);
@@ -1212,8 +1675,13 @@ function bindUI() {
   document.getElementById('btn-voice').addEventListener('click', () => {
     voiceEnabled = !voiceEnabled;
     document.getElementById('btn-voice').classList.toggle('active', voiceEnabled);
-    // Unlock audio on user gesture so future WebSocket-driven playback works
-    if (voiceEnabled) ensureAudioContext();
+    if (voiceEnabled) {
+      // Unlock audio on user gesture so future WebSocket-driven playback works
+      ensureAudioContext();
+    } else {
+      // Stop playback and flush queue when voice is toggled off
+      stopAllAudio();
+    }
     // Tell backend to start/stop generating TTS
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'voice-toggle', enabled: voiceEnabled }));
@@ -1221,6 +1689,31 @@ function bindUI() {
   });
 
   document.getElementById('btn-mic').addEventListener('click', toggleMic);
+
+  const projectSelect = document.getElementById('project-filter');
+  const deleteBtn = document.getElementById('btn-delete-project');
+
+  projectSelect.addEventListener('change', (e) => {
+    projectFilter = e.target.value || null;
+    // Show/hide delete button (only when a specific project is selected)
+    deleteBtn.style.display = projectFilter ? '' : 'none';
+    // Force re-render of terminal and event log with new filter
+    lastTerminalKey = '';
+    lastEventLogKey = '';
+  });
+
+  deleteBtn.addEventListener('click', () => {
+    if (!projectFilter) return;
+    const name = projectFilter;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'delete-project', project: name }));
+    }
+    projectFilter = null;
+    projectSelect.value = '';
+    deleteBtn.style.display = 'none';
+    lastTerminalKey = '';
+    lastEventLogKey = '';
+  });
 
   initSidebarTabs();
 }
@@ -1241,10 +1734,130 @@ function setText(id, value) {
   if (el) el.textContent = String(value ?? 0);
 }
 
+function updateProjectDropdown(projects) {
+  const select = document.getElementById('project-filter');
+  if (!select) return;
+
+  // Remember current selection
+  const current = select.value;
+
+  // Rebuild options only if the list changed
+  const existing = Array.from(select.options).slice(1).map(o => o.value);
+  if (existing.length === projects.length && existing.every((v, i) => v === projects[i])) return;
+
+  select.innerHTML = '<option value="">All Projects</option>';
+  for (const p of projects) {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    select.appendChild(opt);
+  }
+
+  // Restore selection
+  if (current && projects.includes(current)) {
+    select.value = current;
+  }
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// --- Shop ---
+function renderShopPanel(shop) {
+  // Fingerprint: honey + equipped skin + equipped accessory + owned count
+  const key = `${shop.honey}:${shop.equippedSkin}:${shop.equippedAccessory}:${shop.ownedSkins?.length}:${shop.ownedAccessories?.length}`;
+  if (key === lastShopKey) return;
+  lastShopKey = key;
+
+  setText('shop-honey', shop.honey);
+
+  const skinsGrid = document.getElementById('shop-skins');
+  const accGrid = document.getElementById('shop-accessories');
+  if (!skinsGrid || !accGrid || !shop.items) return;
+
+  skinsGrid.innerHTML = '';
+  accGrid.innerHTML = '';
+
+  for (const item of shop.items) {
+    const owned = item.type === 'skin'
+      ? shop.ownedSkins?.includes(item.id)
+      : shop.ownedAccessories?.includes(item.id);
+    const equipped = item.type === 'skin'
+      ? shop.equippedSkin === item.id
+      : shop.equippedAccessory === item.id;
+
+    const card = document.createElement('div');
+    card.className = 'shop-card' + (equipped ? ' equipped' : '');
+
+    // Preview (color swatch for skins, emoji icon for accessories)
+    let previewHtml;
+    if (item.type === 'skin' && item.color) {
+      previewHtml = `<div class="shop-card-preview" style="background:${item.color}"></div>`;
+    } else {
+      const icons = {
+        'party-hat': '\uD83C\uDF89', 'bow-tie': '\uD83C\uDFA9', 'sunglasses': '\uD83D\uDE0E',
+        'top-hat': '\uD83C\uDFA9', 'headphones': '\uD83C\uDFA7', 'wizard-hat': '\uD83E\uDDD9',
+        'halo': '\uD83D\uDE07', 'devil-horns': '\uD83D\uDE08',
+      };
+      const icon = icons[item.id] || '\u2728';
+      previewHtml = `<div class="shop-card-preview" style="background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:18px">${icon}</div>`;
+    }
+
+    // Button
+    let btnHtml;
+    if (!owned) {
+      const canAfford = shop.honey >= item.price;
+      btnHtml = `<button class="shop-card-btn buy" ${canAfford ? '' : 'disabled'} data-action="purchase" data-id="${item.id}">${item.price === 0 ? 'Free' : item.price + ' \uD83C\uDF6F'}</button>`;
+    } else if (equipped) {
+      btnHtml = `<button class="shop-card-btn equipped" data-action="equip" data-id="${item.id}">Equipped</button>`;
+    } else {
+      btnHtml = `<button class="shop-card-btn equip" data-action="equip" data-id="${item.id}">Equip</button>`;
+    }
+
+    card.innerHTML = `
+      ${previewHtml}
+      <div class="shop-card-name">${escapeHtml(item.name)}</div>
+      <div class="shop-card-desc">${escapeHtml(item.description || '')}</div>
+      ${btnHtml}
+    `;
+
+    // Bind button click
+    const btn = card.querySelector('.shop-card-btn');
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: action === 'purchase' ? 'shop-purchase' : 'shop-equip', itemId: id }));
+      }
+    });
+
+    (item.type === 'skin' ? skinsGrid : accGrid).appendChild(card);
+  }
+}
+
+function handleShopResult(payload) {
+  if (payload.error) {
+    showSubtitle(`Shop: ${payload.error}`);
+  }
+}
+
+function showHoneyEarned(amount) {
+  const el = document.createElement('div');
+  el.className = 'honey-float';
+  el.textContent = `+${amount} \uD83C\uDF6F`;
+  // Position near the honey stat
+  const stat = document.getElementById('stat-honey');
+  if (stat) {
+    const rect = stat.getBoundingClientRect();
+    el.style.left = rect.left + 'px';
+  } else {
+    el.style.right = '120px';
+  }
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1500);
 }
 
 // --- Start ---
