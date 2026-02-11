@@ -14,7 +14,7 @@ import type { OfficeState, WSMessage, OnboardingConfig, BuildingState } from './
 import { Voice } from './voice.js';
 import type { Relay } from './relay.js';
 import type { ChatHandler } from './chat.js';
-import type { Office } from './office.js';
+import { Office } from './office.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -273,6 +273,22 @@ export class Server {
         console.error('[server] Chat error:', (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
       }
+    });
+
+    // GET /api/sessions — List saved sessions
+    this.app.get('/api/sessions', (_req, res) => {
+      const sessions = Office.loadSessionList();
+      res.json({ sessions });
+    });
+
+    // GET /api/sessions/:id — Get a specific session
+    this.app.get('/api/sessions/:id', (req, res) => {
+      const session = Office.loadSession(req.params.id);
+      if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      res.json({ session });
     });
 
     // GET /api/projects — Fetch projects for project picker

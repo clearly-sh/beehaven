@@ -13,9 +13,13 @@ import type {
   OfficeStats,
   Room,
   RoomDef,
+  SessionPersistData,
   ShopPersistData,
   TerminalEntry,
 } from './types.js';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import {
   HONEY_REWARDS,
   loadShopState,
@@ -455,5 +459,70 @@ export class Office {
 
   getState(): OfficeState {
     return this.state;
+  }
+
+  // --- Session Persistence ---
+
+  private static SESSIONS_DIR = join(homedir(), '.beehaven', 'sessions');
+  private sessionStartTime: string | null = null;
+
+  /** Mark session start time for later saving */
+  markSessionStart() {
+    this.sessionStartTime = new Date().toISOString();
+  }
+
+  /** Save current session to disk */
+  saveSession(): string | null {
+    if (!this.state.terminalLog?.length && !this.state.eventLog?.length) return null;
+
+    mkdirSync(Office.SESSIONS_DIR, { recursive: true });
+
+    const now = new Date();
+    const project = this.state.bees[0]?.project || 'unknown';
+    const id = `${now.toISOString().replace(/[:.]/g, '-')}-${project}`;
+
+    const session: SessionPersistData = {
+      id,
+      project,
+      startTime: this.sessionStartTime || this.state.stats.sessionStartTime || now.toISOString(),
+      endTime: now.toISOString(),
+      terminalLog: this.state.terminalLog || [],
+      eventLog: this.state.eventLog || [],
+      stats: { ...this.state.stats },
+    };
+
+    const filePath = join(Office.SESSIONS_DIR, `${id}.json`);
+    writeFileSync(filePath, JSON.stringify(session, null, 2));
+    console.log(`[office] Session saved: ${filePath}`);
+    return id;
+  }
+
+  /** Load all saved sessions (metadata only — no logs) */
+  static loadSessionList(): Array<{ id: string; project?: string; startTime: string; endTime: string; entryCount: number }> {
+    if (!existsSync(Office.SESSIONS_DIR)) return [];
+    try {
+      const files = readdirSync(Office.SESSIONS_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+      return files.slice(0, 50).map(f => {
+        try {
+          const data = JSON.parse(readFileSync(join(Office.SESSIONS_DIR, f), 'utf8')) as SessionPersistData;
+          return {
+            id: data.id,
+            project: data.project,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            entryCount: (data.terminalLog?.length || 0) + (data.eventLog?.length || 0),
+          };
+        } catch { return null; }
+      }).filter(Boolean) as any[];
+    } catch { return []; }
+  }
+
+  /** Load a specific session by ID */
+  static loadSession(id: string): SessionPersistData | null {
+    const filePath = join(Office.SESSIONS_DIR, `${id}.json`);
+    if (!existsSync(filePath)) return null;
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf8'));
+    } catch { return null; }
   }
 }

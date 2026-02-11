@@ -152,6 +152,18 @@ export interface TerminalEntry {
   content: string;
   timestamp: string;
   project?: string;
+  role?: 'user' | 'claude' | 'tool' | 'error';
+}
+
+/** Persisted session data saved to ~/.beehaven/sessions/ */
+export interface SessionPersistData {
+  id: string;
+  project?: string;
+  startTime: string;
+  endTime: string;
+  terminalLog: TerminalEntry[];
+  eventLog: EventLogEntry[];
+  stats: OfficeStats;
 }
 
 export interface OfficeStats {

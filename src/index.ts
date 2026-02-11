@@ -181,9 +181,15 @@ async function main() {
       setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 2500);
     }
 
-    // Persist shop on session end
+    // Mark session start
+    if (event.hook_event_name === 'SessionStart') {
+      office.markSessionStart();
+    }
+
+    // Persist shop + save session on session end
     if (event.hook_event_name === 'SessionEnd') {
       saveShopToConfig(office.shopPersistData());
+      office.saveSession();
     }
 
     // Sync to Clearly cloud (debounced)
