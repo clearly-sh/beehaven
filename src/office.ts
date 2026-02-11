@@ -13,7 +13,17 @@ import type {
   OfficeStats,
   Room,
   RoomDef,
+  ShopPersistData,
+  TerminalEntry,
 } from './types.js';
+import {
+  HONEY_REWARDS,
+  loadShopState,
+  getShopPersistData,
+  purchaseItem,
+  equipItem,
+  getEquippedSkinColor,
+} from './shop.js';
 
 /** Office room layout — WeWork single-team office (half-scale for PixiJS doubling) */
 export const ROOMS: RoomDef[] = [
@@ -110,8 +120,12 @@ const BEE_COLORS = ['#F59E0B', '#EF4444', '#3B82F6', '#10B981', '#8B5CF6', '#EC4
 export class Office {
   state: OfficeState;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private knownProjects = new Set<string>();
+  private deletedProjects = new Set<string>();
 
-  constructor() {
+  constructor(shopData?: ShopPersistData) {
+    const shop = loadShopState(shopData);
+    const queenColor = getEquippedSkinColor(shop);
     const queenPos = roomCenter('lobby');
     const recruiterPos = roomCenter('meeting-room');
     this.state = {
@@ -126,7 +140,7 @@ export class Office {
           y: queenPos.y,
           targetX: queenPos.x,
           targetY: queenPos.y,
-          color: '#F59E0B',
+          color: queenColor,
         },
         {
           id: 'recruiter',
@@ -153,6 +167,8 @@ export class Office {
       },
       chat: { messages: [], isProcessing: false },
       agentScripts: [],
+      terminalLog: [],
+      shop,
     };
   }
 
@@ -160,6 +176,18 @@ export class Office {
   processEvent(event: ClaudeEvent): { speechText?: string } {
     const queen = this.state.bees[0];
     let speechText: string | undefined;
+
+    // Extract project name from cwd (strip trailing slashes, handle edge cases)
+    const project = event.cwd
+      ? event.cwd.replace(/\/+$/, '').split('/').filter(Boolean).pop() || undefined
+      : undefined;
+    if (project && !this.deletedProjects.has(project)) {
+      this.knownProjects.add(project);
+      this.state.projects = Array.from(this.knownProjects).sort();
+      queen.project = project;
+    } else if (project) {
+      queen.project = project;
+    }
 
     // Reset idle timer
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -171,7 +199,7 @@ export class Office {
         this.state.stats.sessionStartTime = event.timestamp;
         this.moveBee(queen, 'lobby', 'arriving');
         queen.message = 'Good morning! Starting work...';
-        this.log('SessionStart', 'Session started', eventIcon('SessionStart'));
+        this.log('SessionStart', 'Session started', eventIcon('SessionStart'), project);
         speechText = 'Starting a new session. Let me see what we are working on.';
         break;
       }
@@ -181,7 +209,7 @@ export class Office {
         const prompt = event.prompt || '';
         const shortPrompt = prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt;
         queen.message = `Hmm... "${shortPrompt}"`;
-        this.log('UserPromptSubmit', shortPrompt, eventIcon('UserPromptSubmit'));
+        this.log('UserPromptSubmit', shortPrompt, eventIcon('UserPromptSubmit'), project);
         speechText = `Let me think about this. ${shortPrompt}`;
         break;
       }
@@ -208,7 +236,7 @@ export class Office {
         }
 
         queen.message = detail;
-        this.log('PreToolUse', detail, eventIcon('PreToolUse', tool));
+        this.log('PreToolUse', detail, eventIcon('PreToolUse', tool), project);
 
         // Update stats
         if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') this.state.stats.filesRead++;
@@ -220,7 +248,7 @@ export class Office {
       case 'PostToolUse': {
         const tool = event.tool_name || 'unknown';
         queen.message = `Done: ${tool} ✓`;
-        this.log('PostToolUse', `${tool} completed`, eventIcon('PostToolUse', tool));
+        this.log('PostToolUse', `${tool} completed`, eventIcon('PostToolUse', tool), project);
         break;
       }
 
@@ -229,7 +257,7 @@ export class Office {
         this.state.stats.errors++;
         queen.activity = 'thinking';
         queen.message = `${tool} failed! Rethinking...`;
-        this.log('PostToolUseFailure', `${tool} error: ${event.error || 'unknown'}`, '❌');
+        this.log('PostToolUseFailure', `${tool} error: ${event.error || 'unknown'}`, '❌', project);
         speechText = `Hmm, that didn't work. Let me try a different approach.`;
         break;
       }
@@ -237,7 +265,7 @@ export class Office {
       case 'Stop': {
         this.moveBee(queen, 'meeting-room', 'presenting');
         queen.message = 'Here are my results!';
-        this.log('Stop', 'Response complete', eventIcon('Stop'));
+        this.log('Stop', 'Response complete', eventIcon('Stop'), project);
         break;
       }
 
@@ -260,9 +288,10 @@ export class Office {
           targetY: pos.y,
           color,
           message: `On it, boss!`,
+          project: queen.project,
         });
 
-        this.log('SubagentStart', `Worker bee "${agentType}" deployed`, '🐝');
+        this.log('SubagentStart', `Worker bee "${agentType}" deployed`, '🐝', project);
         speechText = `Sending a worker bee to handle ${agentType}.`;
         break;
       }
@@ -280,7 +309,7 @@ export class Office {
             if (i > 0) this.state.bees.splice(i, 1);
           }, 3000);
         }
-        this.log('SubagentStop', `Worker returned`, '✅');
+        this.log('SubagentStop', `Worker returned`, '✅', project);
         break;
       }
 
@@ -288,10 +317,16 @@ export class Office {
         this.state.sessionActive = false;
         this.moveBee(queen, 'lobby', 'idle');
         queen.message = 'See you next time!';
-        this.log('SessionEnd', 'Session ended', eventIcon('SessionEnd'));
+        this.log('SessionEnd', 'Session ended', eventIcon('SessionEnd'), project);
         speechText = 'Session complete. See you next time!';
         break;
       }
+    }
+
+    // Award honey for this event
+    const honeyReward = HONEY_REWARDS[event.hook_event_name];
+    if (honeyReward) {
+      this.state.shop.honey += honeyReward;
     }
 
     this.state.currentEvent = event.hook_event_name;
@@ -319,12 +354,13 @@ export class Office {
   }
 
   /** Add entry to event log */
-  private log(event: string, detail: string, icon: string) {
+  private log(event: string, detail: string, icon: string, project?: string) {
     this.state.eventLog.unshift({
       timestamp: new Date().toISOString(),
       event,
       detail,
       icon,
+      project,
     });
     // Keep last 50 entries
     if (this.state.eventLog.length > 50) {
@@ -358,6 +394,63 @@ export class Office {
       this.state.chat = { messages: [], isProcessing: false };
     }
     this.state.chat.isProcessing = isProcessing;
+  }
+
+  /** Add entry to terminal log (persists in state for reconnecting clients) */
+  addTerminalEntry(entry: TerminalEntry) {
+    if (!this.state.terminalLog) this.state.terminalLog = [];
+    this.state.terminalLog.push(entry);
+    if (this.state.terminalLog.length > 100) {
+      this.state.terminalLog = this.state.terminalLog.slice(-100);
+    }
+  }
+
+  /** Remove a project from the known list */
+  removeProject(name: string) {
+    this.knownProjects.delete(name);
+    this.deletedProjects.add(name);
+    this.state.projects = Array.from(this.knownProjects).sort();
+    // Remove worker bees from this project; untag persistent bees (queen, recruiter)
+    this.state.bees = this.state.bees.filter(bee => {
+      if (bee.project !== name) return true;
+      if (bee.role === 'queen' || bee.role === 'recruiter') {
+        bee.project = undefined;
+        return true;
+      }
+      return false; // Remove workers from deleted project
+    });
+    // Remove project from event log and terminal log entries
+    this.state.eventLog = this.state.eventLog.filter(e => e.project !== name);
+    if (this.state.terminalLog) {
+      this.state.terminalLog = this.state.terminalLog.filter(e => e.project !== name);
+    }
+  }
+
+  /** Purchase a shop item. Returns error string or null on success. */
+  shopPurchase(itemId: string): string | null {
+    const err = purchaseItem(this.state.shop, itemId);
+    if (!err) this.applyEquippedSkin();
+    return err;
+  }
+
+  /** Equip a shop item. Returns error string or null on success. */
+  shopEquip(itemId: string): string | null {
+    const err = equipItem(this.state.shop, itemId);
+    if (!err) this.applyEquippedSkin();
+    return err;
+  }
+
+  /** Get persist-safe shop data */
+  shopPersistData(): ShopPersistData {
+    return getShopPersistData(this.state.shop);
+  }
+
+  /** Sync queen bee color to equipped skin */
+  private applyEquippedSkin() {
+    const queen = this.state.bees[0];
+    if (queen) {
+      queen.color = getEquippedSkinColor(this.state.shop);
+    }
   }
 
   getState(): OfficeState {

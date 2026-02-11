@@ -367,6 +367,33 @@ export class Server {
           if (msg.type === 'voice-toggle') {
             this.voiceRequested = !!msg.enabled;
             console.log(`[server] Voice ${this.voiceRequested ? 'ON' : 'OFF'}`);
+          } else if (msg.type === 'delete-project' && this.office) {
+            const proj = msg.project;
+            if (typeof proj === 'string' && proj.length > 0 && proj.length < 256) {
+              this.office.removeProject(proj);
+              this.broadcastState(this.office.getState());
+              console.log(`[server] Deleted project: ${proj}`);
+            }
+          } else if (msg.type === 'shop-purchase' && this.office) {
+            const itemId = msg.itemId;
+            if (typeof itemId === 'string') {
+              const err = this.office.shopPurchase(itemId);
+              this.broadcastMessage({ type: 'shop-result', payload: { action: 'purchase', itemId, error: err } });
+              if (!err) {
+                saveOnboardingConfig({ shop: this.office.shopPersistData() });
+              }
+              this.broadcastState(this.office.getState());
+            }
+          } else if (msg.type === 'shop-equip' && this.office) {
+            const itemId = msg.itemId;
+            if (typeof itemId === 'string') {
+              const err = this.office.shopEquip(itemId);
+              this.broadcastMessage({ type: 'shop-result', payload: { action: 'equip', itemId, error: err } });
+              if (!err) {
+                saveOnboardingConfig({ shop: this.office.shopPersistData() });
+              }
+              this.broadcastState(this.office.getState());
+            }
           }
         } catch { /* ignore */ }
       });
@@ -461,8 +488,8 @@ export class Server {
         payload: { status: 'complete', response: responseText },
       });
 
-      // TTS the response
-      if (this.voice?.isEnabled() && responseText) {
+      // TTS the response (only when client has toggled voice on)
+      if (this.voice?.isEnabled() && this.voiceRequested && responseText) {
         const audio = await this.voice.speak(responseText);
         if (audio) {
           this.broadcastSpeech(audio.toString('base64'), `Recruiter: ${responseText}`);

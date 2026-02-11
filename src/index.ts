@@ -10,15 +10,34 @@ import { Voice } from './voice.js';
 import { Relay } from './relay.js';
 import { ChatHandler } from './chat.js';
 
-import { readFileSync, statSync } from 'fs';
+import { readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+import type { OnboardingConfig, ShopPersistData } from './types.js';
 
 const PORT = parseInt(process.env.BEEHAVEN_PORT || '3333');
+
+const CONFIG_DIR = join(homedir(), '.beehaven');
+const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+
+function loadConfig(): OnboardingConfig {
+  if (!existsSync(CONFIG_FILE)) return { onboarded: false, tier: 'local' };
+  try { return JSON.parse(readFileSync(CONFIG_FILE, 'utf8')); }
+  catch { return { onboarded: false, tier: 'local' }; }
+}
+
+function saveShopToConfig(shop: ShopPersistData): void {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  const existing = loadConfig();
+  existing.shop = shop;
+  writeFileSync(CONFIG_FILE, JSON.stringify(existing, null, 2));
+}
 
 // Track transcript reading position so we only send new text
 let lastTranscriptSize = 0;
 let lastTranscriptPath = '';
 
-async function flushNewTranscriptText(transcriptPath: string, server: Server, voice: Voice) {
+async function flushNewTranscriptText(transcriptPath: string, server: Server, voice: Voice, office: Office) {
   try {
     if (transcriptPath !== lastTranscriptPath) {
       lastTranscriptPath = transcriptPath;
@@ -58,6 +77,14 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
             if (text.length > 0) {
               const displayText = text.length > 5000 ? text.slice(0, 5000) + '\n...' : text;
               console.log(`[transcript] Text (${text.length} chars): ${text.slice(0, 80)}...`);
+              // Tag with current queen's project so filter works
+              const queenProject = office.getState().bees[0]?.project;
+              office.addTerminalEntry({
+                event: 'Stop',
+                content: displayText,
+                timestamp: new Date().toISOString(),
+                project: queenProject,
+              });
               server.broadcastResponse({ event: 'Stop', content: displayText });
 
               // TTS only when client has toggled voice on
@@ -93,8 +120,9 @@ async function main() {
   console.log('');
 
   // Initialize components
+  const config = loadConfig();
   const watcher = new ClaudeWatcher();
-  const office = new Office();
+  const office = new Office(config.shop);
   const server = new Server(PORT);
   const relay = new Relay();
   const voice = new Voice({
@@ -114,11 +142,24 @@ async function main() {
   watcher.on('event', async (event) => {
     const { speechText } = office.processEvent(event);
 
+    // Add user input to persistent terminal log before broadcasting state
+    if (event.hook_event_name === 'UserPromptSubmit' && event.prompt) {
+      const proj = event.cwd
+        ? event.cwd.replace(/\/+$/, '').split('/').filter(Boolean).pop() || undefined
+        : undefined;
+      office.addTerminalEntry({
+        event: 'UserPromptSubmit',
+        content: event.prompt,
+        timestamp: new Date().toISOString(),
+        project: proj,
+      });
+    }
+
     // Broadcast updated state to all local UI clients
     server.broadcastState(office.getState());
     server.broadcastEvent(event.hook_event_name, event.tool_name || '');
 
-    // Forward user input to the frontend
+    // Also send real-time response for tab flash notification
     if (event.hook_event_name === 'UserPromptSubmit' && event.prompt) {
       server.broadcastResponse({
         event: 'UserPromptSubmit',
@@ -129,15 +170,20 @@ async function main() {
     // On every event, check the transcript for new assistant text + TTS
     const transcriptPath = (event as any).transcript_path as string | undefined;
     if (transcriptPath) {
-      await flushNewTranscriptText(transcriptPath, server, voice);
+      await flushNewTranscriptText(transcriptPath, server, voice, office);
     }
 
     // On Stop events, do multiple delayed re-reads — the transcript may not be
     // fully flushed when the hook fires, so the final response gets missed.
     if (event.hook_event_name === 'Stop' && lastTranscriptPath) {
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice), 300);
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice), 1000);
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice), 2500);
+      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 300);
+      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 1000);
+      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 2500);
+    }
+
+    // Persist shop on session end
+    if (event.hook_event_name === 'SessionEnd') {
+      saveShopToConfig(office.shopPersistData());
     }
 
     // Sync to Clearly cloud (debounced)
@@ -149,6 +195,11 @@ async function main() {
   setInterval(() => {
     server.broadcastState(office.getState());
   }, 500);
+
+  // Auto-save shop state every 60s
+  setInterval(() => {
+    saveShopToConfig(office.shopPersistData());
+  }, 60_000);
 
   // Start everything
   await server.start();
