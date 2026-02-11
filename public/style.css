@@ -461,6 +461,102 @@ body {
 #event-log::-webkit-scrollbar-track { background: transparent; }
 #event-log::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 2px; }
 
+/* ---- Session History Browser ---- */
+.session-browser-header {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  scrollbar-width: none;
+}
+.session-browser-header::-webkit-scrollbar { display: none; }
+
+.session-card {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  min-width: 64px;
+}
+.session-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+}
+.session-card.active {
+  background: rgba(245, 197, 66, 0.12);
+  border-color: rgba(245, 197, 66, 0.3);
+  color: var(--accent-honey);
+}
+.session-card-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+}
+.session-card-dot.live {
+  background: #4ade80;
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.5);
+  animation: livePulse 2s ease infinite;
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.session-card-label {
+  font-weight: 600;
+  font-size: 11px;
+}
+.session-card-project {
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-card-time {
+  font-size: 9px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+.session-card-count {
+  font-size: 9px;
+  opacity: 0.4;
+}
+.session-card-count::after { content: ' events'; }
+
+.session-loading {
+  padding: 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+}
+.session-info {
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+}
+.session-info-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-honey);
+}
+.session-info-meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 2px;
+}
+
 /* ---- Chat Panel ---- */
 .chat-panel {
   position: fixed;

@@ -4,12 +4,13 @@
 // ============================================================================
 
 import { watch } from 'chokidar';
-import { createReadStream, existsSync, writeFileSync, statSync } from 'fs';
+import { createReadStream, existsSync, writeFileSync, statSync, renameSync } from 'fs';
 import { createInterface } from 'readline';
 import { EventEmitter } from 'events';
 import type { ClaudeEvent } from './types.js';
 
 const EVENTS_FILE = '/tmp/beehaven-events.jsonl';
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export class ClaudeWatcher extends EventEmitter {
   private lastSize = 0;
@@ -35,7 +36,26 @@ export class ClaudeWatcher extends EventEmitter {
       this.readNewLines();
     });
 
+    // Rotate oversized file on startup
+    this.rotateIfNeeded();
+
     console.log(`[watcher] Watching ${EVENTS_FILE} for Claude Code events...`);
+  }
+
+  /** Rotate the events file if it exceeds MAX_FILE_SIZE */
+  private rotateIfNeeded() {
+    try {
+      const size = statSync(EVENTS_FILE).size;
+      if (size > MAX_FILE_SIZE) {
+        const rotated = `${EVENTS_FILE}.${Date.now()}.old`;
+        renameSync(EVENTS_FILE, rotated);
+        writeFileSync(EVENTS_FILE, '');
+        this.lastSize = 0;
+        console.log(`[watcher] Rotated events file (${(size / 1024 / 1024).toFixed(1)} MB) → ${rotated}`);
+      }
+    } catch {
+      // File may not exist yet
+    }
   }
 
   private async readNewLines() {
@@ -63,14 +83,17 @@ export class ClaudeWatcher extends EventEmitter {
         try {
           const event: ClaudeEvent = JSON.parse(line);
           this.emit('event', event);
-        } catch {
-          // Skip malformed lines
+        } catch (err) {
+          console.warn(`[watcher] Skipping malformed JSON line: ${line.slice(0, 100)}`, (err as Error).message);
         }
       }
 
       this.lastSize = currentSize;
-    } catch {
-      // File may have been deleted/recreated
+
+      // Rotate if file has grown too large during this session
+      this.rotateIfNeeded();
+    } catch (err) {
+      console.warn(`[watcher] File read error (resetting offset):`, (err as Error).message);
       this.lastSize = 0;
     }
 

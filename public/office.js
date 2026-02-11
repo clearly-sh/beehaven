@@ -450,6 +450,7 @@ async function init() {
   createElevator();
   initAmbientBees();
   initVisualEffects();
+  initDoors();
 
   // Animation loop
   app.ticker.add(() => {
@@ -457,6 +458,7 @@ async function init() {
     updateAllBees();
     updateElevator();
     updateVisualEffects();
+    updateDoors();
     updateBuildingTransition();
   });
 
@@ -603,6 +605,128 @@ function findInteractionPoint(roomId, beeId, isQueen) {
   const pt = points[Math.floor(Math.random() * points.length)];
   return { x: pt.x + (Math.random() - 0.5) * 20, y: pt.y + (Math.random() - 0.5) * 20, type: 'stand', facing: pt.facing };
 }
+
+// --- Bee Expressions ---
+/** Map activity to expression */
+function activityToExpression(activity) {
+  switch (activity) {
+    case 'coding': case 'reading': case 'searching': case 'running-command': case 'thinking':
+      return 'focused';
+    case 'presenting': case 'celebrating': case 'arriving':
+      return 'happy';
+    case 'drinking-coffee': case 'chatting':
+      return 'sleepy';
+    default:
+      return 'neutral';
+  }
+}
+
+/** Map facing direction to eye pupil offset */
+function facingToEyeOffset(facing) {
+  switch (facing) {
+    case 'left':  return { x: -2, y: 0 };
+    case 'right': return { x: 2, y: 0 };
+    case 'up':    return { x: 0, y: -1 };
+    case 'down':  return { x: 0, y: 1 };
+    default:      return { x: 0, y: 0 };
+  }
+}
+
+/** Draw bee face (eyes, mouth, blush) — redrawn on expression/facing changes */
+function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
+  g.clear();
+  const ox = eyeOffX * s;
+  const oy = eyeOffY * s;
+
+  switch (expression) {
+    case 'focused':
+      // Narrowed determined eyes
+      g.ellipse(-7*s, -26*s, 6*s, 5*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -25*s+oy, 4*s, 3.5*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -27*s+oy, 2*s).fill(0xffffff);
+      g.ellipse(7*s, -26*s, 6*s, 5*s).fill(0xffffff);
+      g.ellipse(7*s+ox, -25*s+oy, 4*s, 3.5*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -27*s+oy, 2*s).fill(0xffffff);
+      // Flat mouth
+      g.moveTo(-3*s, -17*s).lineTo(3*s, -17*s).stroke({ color: 0x78716c, width: 1.5*s });
+      g.ellipse(-14*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
+      g.ellipse(14*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
+      break;
+
+    case 'happy':
+      // Wide sparkly eyes, big smile
+      g.ellipse(-7*s, -26*s, 7*s, 7.5*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -25*s+oy, 5*s, 5.5*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(-9*s+ox, -24*s+oy, 1.5*s).fill(0xffffff);
+      g.ellipse(7*s, -26*s, 7*s, 7.5*s).fill(0xffffff);
+      g.ellipse(7*s+ox, -25*s+oy, 5*s, 5.5*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(5*s+ox, -24*s+oy, 1.5*s).fill(0xffffff);
+      g.arc(0, -18*s, 5*s, 0.1, Math.PI - 0.1).stroke({ color: 0x78716c, width: 1.8*s });
+      g.ellipse(-14*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
+      g.ellipse(14*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
+      break;
+
+    case 'sleepy':
+      // Half-closed eyes
+      g.ellipse(-7*s, -26*s, 6*s, 3*s).fill(0xffffff);
+      g.moveTo(-12*s, -26*s).lineTo(-2*s, -26*s).stroke({ color: 0x1a1a1a, width: 2*s });
+      g.ellipse(7*s, -26*s, 6*s, 3*s).fill(0xffffff);
+      g.moveTo(2*s, -26*s).lineTo(12*s, -26*s).stroke({ color: 0x1a1a1a, width: 2*s });
+      g.arc(0, -18*s, 3*s, 0.2, Math.PI - 0.2).stroke({ color: 0x78716c, width: 1.2*s });
+      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
+      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
+      // Zzz
+      g.moveTo(16*s, -37*s).lineTo(22*s, -37*s).lineTo(16*s, -32*s).lineTo(22*s, -32*s)
+       .stroke({ color: 0x78716c, width: 1*s, alpha: 0.5 });
+      break;
+
+    case 'surprised':
+      // Wide O eyes, O mouth
+      g.ellipse(-7*s, -26*s, 7*s, 8*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -25*s+oy, 3.5*s, 4*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -28*s+oy, 2*s).fill(0xffffff);
+      g.ellipse(7*s, -26*s, 7*s, 8*s).fill(0xffffff);
+      g.ellipse(7*s+ox, -25*s+oy, 3.5*s, 4*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -28*s+oy, 2*s).fill(0xffffff);
+      g.ellipse(0, -16*s, 3*s, 3.5*s).fill(0x78716c);
+      g.ellipse(0, -16*s, 2*s, 2.5*s).fill(0x4a4540);
+      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
+      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
+      break;
+
+    default: // neutral
+      g.ellipse(-7*s, -26*s, 6.5*s, 7*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -25*s+oy, 4.5*s, 5*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(-9*s+ox, -24*s+oy, 1.2*s).fill(0xffffff);
+      g.ellipse(7*s, -26*s, 6.5*s, 7*s).fill(0xffffff);
+      g.ellipse(7*s+ox, -25*s+oy, 4.5*s, 5*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(5*s+ox, -24*s+oy, 1.2*s).fill(0xffffff);
+      g.arc(0, -18*s, 4*s, 0.15, Math.PI - 0.15).stroke({ color: 0x78716c, width: 1.5*s });
+      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      break;
+  }
+}
+
+/** Update a bee's expression and eye direction */
+function updateBeeExpression(beeObj, expression, facing) {
+  const gfx = beeObj.gfx;
+  if (!gfx || !gfx._face) return;
+  const newExpr = expression || 'neutral';
+  const newFacing = facing || null;
+  if (beeObj._expression === newExpr && beeObj._facing === newFacing) return;
+  beeObj._expression = newExpr;
+  beeObj._facing = newFacing;
+  const offset = facingToEyeOffset(newFacing);
+  drawBeeFace(gfx._face, gfx._beeScale, newExpr, offset.x, offset.y);
+}
+
+// --- Door Animation State ---
+const doorStates = DOORS.map(() => ({ openAmount: 0, panelGfx: null, cx: 0, cy: 0, halfGap: 0, isHorizontal: true }));
 
 // --- Floor ---
 function drawFloor() {
@@ -1291,25 +1415,6 @@ function createBeeGraphics(bee) {
   body.circle(0, -24 * s, 17 * s).fill(0xfef9c3);
   body.ellipse(-5 * s, -32 * s, 7 * s, 5 * s).fill({ color: 0xffffff, alpha: 0.2 });
 
-  // Big kawaii eyes
-  // Left eye
-  body.ellipse(-7 * s, -26 * s, 6.5 * s, 7 * s).fill(0xffffff);
-  body.ellipse(-7 * s, -25 * s, 4.5 * s, 5 * s).fill(0x1a1a1a);
-  body.circle(-5 * s, -28 * s, 2.5 * s).fill(0xffffff);
-  body.circle(-9 * s, -24 * s, 1.2 * s).fill(0xffffff);
-  // Right eye
-  body.ellipse(7 * s, -26 * s, 6.5 * s, 7 * s).fill(0xffffff);
-  body.ellipse(7 * s, -25 * s, 4.5 * s, 5 * s).fill(0x1a1a1a);
-  body.circle(9 * s, -28 * s, 2.5 * s).fill(0xffffff);
-  body.circle(5 * s, -24 * s, 1.2 * s).fill(0xffffff);
-
-  // Smile
-  body.arc(0, -18 * s, 4 * s, 0.15, Math.PI - 0.15).stroke({ color: 0x78716c, width: 1.5 * s });
-
-  // Blush
-  body.ellipse(-14 * s, -21 * s, 4.5 * s, 2.5 * s).fill({ color: 0xfca5a5, alpha: 0.45 });
-  body.ellipse(14 * s, -21 * s, 4.5 * s, 2.5 * s).fill({ color: 0xfca5a5, alpha: 0.45 });
-
   // Antennae
   body.moveTo(-6 * s, -40 * s).quadraticCurveTo(-15 * s, -54 * s, -10 * s, -56 * s).stroke({ color: 0x78716c, width: 2 });
   body.moveTo(6 * s, -40 * s).quadraticCurveTo(15 * s, -54 * s, 10 * s, -56 * s).stroke({ color: 0x78716c, width: 2 });
@@ -1320,6 +1425,13 @@ function createBeeGraphics(bee) {
   body.circle(8 * s, -57 * s, 3 * s).fill(beeColor);
 
   c.addChild(body);
+
+  // Face (separate Graphics for dynamic expressions)
+  const face = new Graphics();
+  drawBeeFace(face, s, 'neutral', 0, 0);
+  c.addChild(face);
+  c._face = face;
+  c._beeScale = s;
 
   // Role-specific accessories
   drawAccessory(c, bee, s, beeColor);
@@ -1383,15 +1495,22 @@ function drawAccessory(container, bee, s, beeColor) {
     g.moveTo(16 * s, -4 * s).lineTo(24 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
     g.roundRect(-28 * s, 2 * s, 14 * s, 10 * s, 1.5 * s).fill(P.wallDark);
     g.roundRect(-27 * s, 3 * s, 12 * s, 7 * s, 1 * s).fill(0x60a5fa);
-    // Crown
-    g.moveTo(-10 * s, -40 * s).lineTo(-7 * s, -48 * s).lineTo(-2 * s, -42 * s)
-     .lineTo(2 * s, -48 * s).lineTo(7 * s, -42 * s).lineTo(10 * s, -48 * s)
-     .lineTo(10 * s, -40 * s).closePath();
-    g.fill(0xfbbf24);
-    g.stroke({ width: 1.5, color: 0xd97706 });
-    g.circle(-4.5 * s, -45 * s, 1.5 * s).fill(0xef4444);
-    g.circle(4.5 * s, -45 * s, 1.5 * s).fill(0x3b82f6);
-    g.circle(0, -46 * s, 2 * s).fill(0xa855f7);
+
+    // Check for shop-equipped accessory (replaces default crown)
+    const shopAcc = officeState?.shop?.equippedAccessory;
+    if (shopAcc) {
+      drawShopAccessory(g, s, shopAcc);
+    } else {
+      // Default crown
+      g.moveTo(-10 * s, -40 * s).lineTo(-7 * s, -48 * s).lineTo(-2 * s, -42 * s)
+       .lineTo(2 * s, -48 * s).lineTo(7 * s, -42 * s).lineTo(10 * s, -48 * s)
+       .lineTo(10 * s, -40 * s).closePath();
+      g.fill(0xfbbf24);
+      g.stroke({ width: 1.5, color: 0xd97706 });
+      g.circle(-4.5 * s, -45 * s, 1.5 * s).fill(0xef4444);
+      g.circle(4.5 * s, -45 * s, 1.5 * s).fill(0x3b82f6);
+      g.circle(0, -46 * s, 2 * s).fill(0xa855f7);
+    }
 
   } else if (role === 'recruiter' || id === 'recruiter') {
     // Headset band
@@ -1461,6 +1580,91 @@ function drawAccessory(container, bee, s, beeColor) {
   }
 
   container.addChild(g);
+}
+
+/** Draw a shop-purchased accessory on the bee */
+function drawShopAccessory(g, s, accessoryId) {
+  switch (accessoryId) {
+    case 'party-hat':
+      // Cone party hat
+      g.moveTo(0, -54 * s).lineTo(-10 * s, -38 * s).lineTo(10 * s, -38 * s).closePath();
+      g.fill(0xEF4444);
+      g.stroke({ width: 1, color: 0xB91C1C });
+      g.circle(0, -55 * s, 2.5 * s).fill(0xFBBF24);
+      // Brim
+      g.ellipse(0, -38 * s, 12 * s, 3 * s).fill(0xEF4444);
+      break;
+
+    case 'bow-tie':
+      // Bow tie at neck
+      g.moveTo(0, -10 * s).lineTo(-8 * s, -14 * s).lineTo(-8 * s, -6 * s).closePath().fill(0xEF4444);
+      g.moveTo(0, -10 * s).lineTo(8 * s, -14 * s).lineTo(8 * s, -6 * s).closePath().fill(0xEF4444);
+      g.circle(0, -10 * s, 2 * s).fill(0xB91C1C);
+      break;
+
+    case 'sunglasses':
+      // Cool shades over eyes
+      g.roundRect(-13 * s, -30 * s, 10 * s, 7 * s, 2 * s).fill(0x1a1a1a);
+      g.roundRect(3 * s, -30 * s, 10 * s, 7 * s, 2 * s).fill(0x1a1a1a);
+      g.moveTo(-3 * s, -26 * s).lineTo(3 * s, -26 * s).stroke({ color: 0x1a1a1a, width: 1.5 * s });
+      // Lens shine
+      g.roundRect(-11 * s, -29 * s, 4 * s, 2 * s, 1 * s).fill({ color: 0xffffff, alpha: 0.25 });
+      g.roundRect(5 * s, -29 * s, 4 * s, 2 * s, 1 * s).fill({ color: 0xffffff, alpha: 0.25 });
+      break;
+
+    case 'top-hat':
+      // Tall top hat
+      g.roundRect(-8 * s, -56 * s, 16 * s, 18 * s, 2 * s).fill(0x1f2937);
+      g.roundRect(-8 * s, -56 * s, 16 * s, 18 * s, 2 * s).stroke({ width: 1, color: 0x374151 });
+      g.ellipse(0, -38 * s, 14 * s, 4 * s).fill(0x1f2937);
+      // Hat band
+      g.rect(-8 * s, -46 * s, 16 * s, 3 * s).fill(0xFBBF24);
+      break;
+
+    case 'headphones':
+      // Over-ear headphones
+      g.arc(0, -30 * s, 17 * s, -Math.PI * 0.85, -Math.PI * 0.15).stroke({ color: 0xEF4444, width: 3 * s });
+      g.roundRect(-20 * s, -28 * s, 8 * s, 10 * s, 3 * s).fill(0xEF4444);
+      g.roundRect(-19 * s, -27 * s, 6 * s, 8 * s, 2 * s).fill(0xB91C1C);
+      g.roundRect(12 * s, -28 * s, 8 * s, 10 * s, 3 * s).fill(0xEF4444);
+      g.roundRect(13 * s, -27 * s, 6 * s, 8 * s, 2 * s).fill(0xB91C1C);
+      break;
+
+    case 'wizard-hat':
+      // Pointy wizard hat with stars
+      g.moveTo(0, -62 * s).lineTo(-12 * s, -38 * s).lineTo(12 * s, -38 * s).closePath();
+      g.fill(0x7C3AED);
+      g.ellipse(0, -38 * s, 14 * s, 4 * s).fill(0x7C3AED);
+      // Stars
+      g.circle(-3 * s, -50 * s, 2 * s).fill(0xFBBF24);
+      g.circle(4 * s, -44 * s, 1.5 * s).fill(0xFBBF24);
+      break;
+
+    case 'halo':
+      // Golden halo floating above head
+      g.ellipse(0, -48 * s, 14 * s, 5 * s).stroke({ color: 0xFBBF24, width: 2.5 * s });
+      g.ellipse(0, -48 * s, 14 * s, 5 * s).stroke({ color: 0xFDE68A, width: 1 * s, alpha: 0.5 });
+      break;
+
+    case 'devil-horns':
+      // Red devil horns
+      g.moveTo(-10 * s, -38 * s).quadraticCurveTo(-16 * s, -54 * s, -8 * s, -50 * s)
+       .stroke({ color: 0xEF4444, width: 3 * s });
+      g.moveTo(10 * s, -38 * s).quadraticCurveTo(16 * s, -54 * s, 8 * s, -50 * s)
+       .stroke({ color: 0xEF4444, width: 3 * s });
+      g.circle(-8 * s, -50 * s, 2 * s).fill(0xEF4444);
+      g.circle(8 * s, -50 * s, 2 * s).fill(0xEF4444);
+      break;
+
+    default:
+      // Default crown for unknown accessories
+      g.moveTo(-10 * s, -40 * s).lineTo(-7 * s, -48 * s).lineTo(-2 * s, -42 * s)
+       .lineTo(2 * s, -48 * s).lineTo(7 * s, -42 * s).lineTo(10 * s, -48 * s)
+       .lineTo(10 * s, -40 * s).closePath();
+      g.fill(0xfbbf24);
+      g.stroke({ width: 1.5, color: 0xd97706 });
+      break;
+  }
 }
 
 function updateSpeechBubble(beeObj, message) {
@@ -1591,7 +1795,8 @@ function syncBees(serverBees) {
     // Snap to interaction point if available
     const isQueen = bee.role === 'queen' || bee.id === 'queen';
     const ipt = findInteractionPoint(bee.room, bee.id, isQueen);
-    if (ipt) { sx = ipt.x; sy = ipt.y; }
+    let beeFacing = null;
+    if (ipt) { sx = ipt.x; sy = ipt.y; beeFacing = ipt.facing || null; }
 
     // Determine visibility based on project filter
     const visible = !projectFilter || !bee.project || bee.project === projectFilter;
@@ -1621,8 +1826,10 @@ function syncBees(serverBees) {
         if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
       }
 
-      // Recreate graphics if skin color changed (e.g. shop equip)
-      if (bee.color && bee.color !== lb.color) {
+      // Recreate graphics if skin color or shop accessory changed
+      const currentShopAcc = officeState?.shop?.equippedAccessory || null;
+      if ((bee.color && bee.color !== lb.color) || lb._shopAccessory !== currentShopAcc) {
+        lb._shopAccessory = currentShopAcc;
         lb.color = bee.color;
         const oldX = lb.gfx.x;
         const oldY = lb.gfx.y;
@@ -1636,6 +1843,10 @@ function syncBees(serverBees) {
         lb.gfx = newGfx;
         lb.wingPhase = lb.wingPhase || 0;
       }
+
+      // Update expression and facing direction
+      const expr = activityToExpression(bee.activity);
+      updateBeeExpression(lb, expr, beeFacing);
 
       if (bee.message !== lb.lastMessage) {
         lb.lastMessage = bee.message;
@@ -1674,6 +1885,10 @@ function syncBees(serverBees) {
         const path = computePath(spawnX, spawnY, spawnRoom, lb.targetX, lb.targetY, bee.room);
         if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
       }
+
+      // Set initial expression
+      const expr = activityToExpression(bee.activity);
+      updateBeeExpression(lb, expr, beeFacing);
 
       updateSpeechBubble(lb, bee.message);
     }
@@ -1925,6 +2140,79 @@ function updateVisualEffects() {
   }
 }
 
+// --- Door Initialization & Update ---
+function initDoors() {
+  for (let i = 0; i < DOORS.length; i++) {
+    const d = DOORS[i];
+    const room = ROOMS.find(r => r.id === d.room);
+    if (!room) continue;
+
+    const r = 6; // corner radius
+    const halfGap = d.gap / 2;
+    let cx, cy;
+    const isHorizontal = (d.edge === 'top' || d.edge === 'bottom');
+
+    if (d.edge === 'top') {
+      cx = room.x + r + (room.w - 2 * r) * d.pos; cy = room.y;
+    } else if (d.edge === 'bottom') {
+      cx = room.x + r + (room.w - 2 * r) * d.pos; cy = room.y + room.h;
+    } else if (d.edge === 'left') {
+      cx = room.x; cy = room.y + r + (room.h - 2 * r) * d.pos;
+    } else {
+      cx = room.x + room.w; cy = room.y + r + (room.h - 2 * r) * d.pos;
+    }
+
+    const panelGfx = new Graphics();
+    layers.effects.addChild(panelGfx);
+
+    doorStates[i].panelGfx = panelGfx;
+    doorStates[i].cx = cx;
+    doorStates[i].cy = cy;
+    doorStates[i].halfGap = halfGap;
+    doorStates[i].isHorizontal = isHorizontal;
+  }
+}
+
+function updateDoors() {
+  // Collect all bee positions
+  const beePositions = [];
+  for (const b of Object.values(localBees)) beePositions.push({ x: b.drawX, y: b.drawY });
+  for (const b of Object.values(ambientBees)) beePositions.push({ x: b.drawX, y: b.drawY });
+
+  for (let i = 0; i < doorStates.length; i++) {
+    const ds = doorStates[i];
+    if (!ds.panelGfx) continue;
+
+    // Check if any bee is near this door
+    let nearBee = false;
+    for (const bp of beePositions) {
+      if (Math.hypot(bp.x - ds.cx, bp.y - ds.cy) < 50) {
+        nearBee = true;
+        break;
+      }
+    }
+
+    // Lerp open amount
+    const target = nearBee ? 1 : 0;
+    ds.openAmount += (target - ds.openAmount) * 0.08;
+
+    // Render sliding door panels
+    ds.panelGfx.clear();
+    const hg = ds.halfGap;
+    const panelLen = hg * 0.7 * (1 - ds.openAmount);
+
+    if (panelLen < 0.5) continue; // fully open
+
+    if (ds.isHorizontal) {
+      ds.panelGfx.rect(ds.cx - hg, ds.cy - 1.5, panelLen, 3).fill({ color: P.wood, alpha: 0.7 });
+      ds.panelGfx.rect(ds.cx + hg - panelLen, ds.cy - 1.5, panelLen, 3).fill({ color: P.wood, alpha: 0.7 });
+    } else {
+      ds.panelGfx.rect(ds.cx - 1.5, ds.cy - hg, 3, panelLen).fill({ color: P.wood, alpha: 0.7 });
+      ds.panelGfx.rect(ds.cx - 1.5, ds.cy + hg - panelLen, 3, panelLen).fill({ color: P.wood, alpha: 0.7 });
+    }
+  }
+}
+
 // --- Building View ---
 function updateBuildingTransition() {
   // Smooth lerp toward target
@@ -2153,12 +2441,12 @@ function handleState(state) {
   // Sync ALL bees (visibility is toggled inside syncBees based on projectFilter)
   syncBees(state.bees);
 
-  // Event log (filtered by project)
+  // Event log (filtered by project) — uses session history browser wrapper
   const filteredLog = projectFilter
     ? state.eventLog.filter(e => !e.project || e.project === projectFilter)
     : state.eventLog;
   if (state.eventLog) {
-    renderEventLog(filteredLog);
+    renderActivityPanel(filteredLog);
   }
 
   // Terminal log from state (persists across reconnects)
@@ -2271,6 +2559,136 @@ function showSubtitle(text) {
   bar.classList.remove('hidden');
   clearTimeout(window._subtitleTimer);
   window._subtitleTimer = setTimeout(() => bar.classList.add('hidden'), 6000);
+}
+
+// --- Session History Browser ---
+let sessionListCache = null;
+let sessionListFetched = false;
+let activeSessionId = null; // null = live view
+
+async function fetchSessionList() {
+  try {
+    const res = await fetch('/api/sessions');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data || [];
+  } catch { return []; }
+}
+
+async function fetchSession(id) {
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+function renderActivityPanel(liveEntries) {
+  const panel = document.getElementById('activity-panel');
+  if (!panel) return;
+
+  // Build session header if not already present
+  let header = panel.querySelector('.session-browser-header');
+  if (!header) {
+    header = document.createElement('div');
+    header.className = 'session-browser-header';
+    panel.insertBefore(header, panel.firstChild);
+
+    // Fetch sessions on first render
+    if (!sessionListFetched) {
+      sessionListFetched = true;
+      fetchSessionList().then(sessions => {
+        sessionListCache = sessions;
+        renderSessionCards(header, sessions);
+      });
+    }
+  }
+
+  // If viewing a past session, don't overwrite with live data
+  if (activeSessionId) return;
+
+  // Otherwise render live event log
+  renderEventLog(liveEntries);
+}
+
+function renderSessionCards(container, sessions) {
+  container.innerHTML = '';
+
+  // Live session card (always first)
+  const liveCard = document.createElement('button');
+  liveCard.className = 'session-card' + (!activeSessionId ? ' active' : '');
+  liveCard.innerHTML = '<span class="session-card-dot live"></span><span class="session-card-label">Live</span>';
+  liveCard.addEventListener('click', () => {
+    activeSessionId = null;
+    container.querySelectorAll('.session-card').forEach(c => c.classList.remove('active'));
+    liveCard.classList.add('active');
+    lastEventLogKey = ''; // force re-render
+  });
+  container.appendChild(liveCard);
+
+  // Past session cards
+  for (const s of sessions) {
+    const card = document.createElement('button');
+    card.className = 'session-card';
+    const date = new Date(s.startTime);
+    const timeStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+                    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    card.innerHTML = `
+      <span class="session-card-project">${escapeHtml(s.project || 'unknown')}</span>
+      <span class="session-card-time">${timeStr}</span>
+      <span class="session-card-count">${s.entryCount}</span>
+    `;
+    card.addEventListener('click', async () => {
+      activeSessionId = s.id;
+      container.querySelectorAll('.session-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+
+      // Fetch and display past session
+      const log = document.getElementById('event-log');
+      if (log) log.innerHTML = '<div class="session-loading">Loading session...</div>';
+
+      const session = await fetchSession(s.id);
+      if (session && activeSessionId === s.id) {
+        renderPastSession(session);
+      }
+    });
+    container.appendChild(card);
+  }
+}
+
+function renderPastSession(session) {
+  const log = document.getElementById('event-log');
+  if (!log) return;
+  log.innerHTML = '';
+
+  // Session info header
+  const info = document.createElement('div');
+  info.className = 'session-info';
+  const start = new Date(session.startTime);
+  const end = new Date(session.endTime);
+  const duration = Math.round((end - start) / 60000);
+  info.innerHTML = `
+    <div class="session-info-title">${escapeHtml(session.project || 'Session')}</div>
+    <div class="session-info-meta">${start.toLocaleString()} &middot; ${duration}m &middot; ${(session.eventLog?.length || 0)} events</div>
+  `;
+  log.appendChild(info);
+
+  // Render event entries
+  const entries = session.eventLog || [];
+  for (const entry of entries.slice(0, 50)) {
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    const time = new Date(entry.timestamp);
+    const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    el.innerHTML = `
+      <span class="log-icon">${entry.icon || '\uD83D\uDCCB'}</span>
+      <div>
+        <span class="log-detail">${escapeHtml(entry.detail || entry.event || '')}</span>
+        <span class="log-time">${timeStr}</span>
+      </div>
+    `;
+    log.appendChild(el);
+  }
 }
 
 // --- Event Log ---

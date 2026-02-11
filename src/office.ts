@@ -126,6 +126,8 @@ export class Office {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private knownProjects = new Set<string>();
   private deletedProjects = new Set<string>();
+  private static CONFIG_DIR = join(homedir(), '.beehaven');
+  private static CONFIG_FILE = join(homedir(), '.beehaven', 'config.json');
 
   constructor(shopData?: ShopPersistData) {
     const shop = loadShopState(shopData);
@@ -174,6 +176,73 @@ export class Office {
       terminalLog: [],
       shop,
     };
+
+    // Auto-detect projects on startup
+    this.loadDeletedProjects();
+    this.scanLocalProjects();
+  }
+
+  /** Load persisted deleted projects from config */
+  private loadDeletedProjects() {
+    try {
+      if (existsSync(Office.CONFIG_FILE)) {
+        const config = JSON.parse(readFileSync(Office.CONFIG_FILE, 'utf8'));
+        if (Array.isArray(config.deletedProjects)) {
+          for (const p of config.deletedProjects) this.deletedProjects.add(p);
+        }
+      }
+    } catch { /* ignore corrupt config */ }
+  }
+
+  /** Persist deleted projects to config file */
+  private saveDeletedProjects() {
+    try {
+      mkdirSync(Office.CONFIG_DIR, { recursive: true });
+      const config = existsSync(Office.CONFIG_FILE)
+        ? JSON.parse(readFileSync(Office.CONFIG_FILE, 'utf8'))
+        : {};
+      config.deletedProjects = Array.from(this.deletedProjects);
+      writeFileSync(Office.CONFIG_FILE, JSON.stringify(config, null, 2));
+    } catch (err) {
+      console.warn('[office] Failed to save config:', err);
+    }
+  }
+
+  /** Scan saved sessions and ~/.claude/projects/ to pre-populate knownProjects */
+  private scanLocalProjects() {
+    // 1. Extract projects from saved sessions
+    try {
+      const sessions = Office.loadSessionList();
+      for (const s of sessions) {
+        if (s.project && s.project !== 'unknown' && !this.deletedProjects.has(s.project)) {
+          this.knownProjects.add(s.project);
+        }
+      }
+    } catch { /* sessions dir may not exist yet */ }
+
+    // 2. Scan ~/.claude/projects/ directories
+    try {
+      const claudeProjectsDir = join(homedir(), '.claude', 'projects');
+      if (existsSync(claudeProjectsDir)) {
+        const dirs = readdirSync(claudeProjectsDir, { withFileTypes: true });
+        for (const d of dirs) {
+          if (!d.isDirectory()) continue;
+          // Directory names are URL-encoded paths like "-Users-gemini-projects-myapp"
+          // Extract the last segment as the project name
+          const segments = d.name.split('-').filter(Boolean);
+          const projectName = segments[segments.length - 1];
+          if (projectName && !this.deletedProjects.has(projectName)) {
+            this.knownProjects.add(projectName);
+          }
+        }
+      }
+    } catch { /* claude dir may not exist */ }
+
+    // Set state.projects so first WebSocket broadcast includes them
+    if (this.knownProjects.size > 0) {
+      this.state.projects = Array.from(this.knownProjects).sort();
+      console.log(`[office] Auto-detected ${this.knownProjects.size} projects: ${this.state.projects.join(', ')}`);
+    }
   }
 
   /** Process a Claude Code event and update office state */
@@ -414,6 +483,7 @@ export class Office {
     this.knownProjects.delete(name);
     this.deletedProjects.add(name);
     this.state.projects = Array.from(this.knownProjects).sort();
+    this.saveDeletedProjects();
     // Remove worker bees from this project; untag persistent bees (queen, recruiter)
     this.state.bees = this.state.bees.filter(bee => {
       if (bee.project !== name) return true;

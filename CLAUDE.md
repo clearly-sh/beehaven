@@ -1,29 +1,21 @@
 # BeeHaven Office
 
-Standalone Node.js application that visualizes Claude Code activity as an animated bee office. Uses **PixiJS v8** for GPU-accelerated HiDPI rendering with Porto Rocha-designed bee SVG sprites. Bee characters move between rooms based on what Claude Code is doing in real-time.
+Standalone Node.js application that visualizes Claude Code activity as an animated bee office. Uses **PixiJS v8** for GPU-accelerated HiDPI rendering. Bee characters move between rooms based on what Claude Code is doing in real-time.
 
 ## Rendering
 
-- **PixiJS v8** — WebGL GPU-accelerated 2D renderer
+- **PixiJS v8** — WebGL GPU-accelerated 2D renderer (loaded via CDN importmap in browser)
 - **HiDPI** — `resolution: window.devicePixelRatio` for Retina displays (2x-3x)
 - **1480x1040** logical canvas — scales to fill container
-- **Porto Rocha bee sprites** — `public/assets/bee-logo-porto-*.svg` loaded as textures
-- **Fallback** — programmatic Graphics drawing if SVG load fails
-- **Layered rendering** — grid → rooms → furniture → bees → UI (sorted draw order)
-
-## Shared Types (from svg_art branch)
-
-Cherry-picked into `src/shared/`:
-
-- `src/shared/bee-memory/types.ts` — 1,506 lines: BeeIdentity, BeeOutfit, BeeNationalAffiliation (Pacific Rim), BeeSkin (LoL-style rarity: common→mythic), SkinEffects, BattlePass, Tournaments, CompetitiveStats, ELO ratings, ChallengeTypes
-- `src/shared/claude-code/types.ts` — ClaudeCodeConfig, CanvasContext, ClaudePromptInput, IPC types for Electron
-- `src/shared/claude-code/daemon-types.ts` — TokenManager, DaemonConfig, WebSocket gateway types
-- `src/shared/claude-code/clearly-hub-types.ts` — HubSkill, HubAgent, SkillCategory (the "AI Reddit" platform)
+- **Programmatic bee sprites** — PixiJS Graphics API draws bees with wings, expressions, accessories
+- **Layered rendering** — grid → rooms → furniture → doors → bees → elevator → UI (sorted draw order)
+- **A* waypoint pathfinding** — 11 nodes, 14 bidirectional edges for smooth bee movement between rooms
+- **COORD_SCALE = 2** — Backend room coords are half-scale, multiplied by 2 on client
 
 ## Commands
 
 ```bash
-cd beehaven
+cd beehaven_office
 npm run dev                              # Start with hot-reload (tsx watch)
 npm run build                            # Compile TypeScript → dist/
 npm run start                            # Run compiled JS
@@ -37,60 +29,62 @@ Opens at http://localhost:3333
 ## Architecture
 
 ```
-Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State → WebSocket → Browser Canvas
+Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State → WebSocket → PixiJS Canvas
 ```
 
 ### Data Flow
 
 1. **Hooks** (`hooks/event-logger.sh`): Shell script receives JSON on stdin from Claude Code hook events, appends timestamped JSONL to `/tmp/beehaven-events.jsonl`
 2. **Watcher** (`src/watcher.ts`): Uses chokidar to poll the JSONL file every 100ms, parses new lines, emits `ClaudeEvent` objects
-3. **Office** (`src/office.ts`): State machine that maps events to bee positions/activities across 8 rooms. Contains room layout coordinates and tool-to-room mapping
+3. **Office** (`src/office.ts`): State machine that maps events to bee positions/activities across 8 rooms. Auto-detects projects on startup from `~/.claude/projects/` and saved sessions
 4. **Server** (`src/server.ts`): Express serves `public/` static files. WebSocketServer pushes state at 2Hz to all connected browsers
 5. **Voice** (`src/voice.ts`): Optional ElevenLabs integration. Strips code blocks from text, speaks conversational portions via TTS. STT available for voice input
-6. **Canvas** (`public/office.js`): HTML5 Canvas renderer with animated bee characters, room furniture, activity indicators, speech bubbles, event log sidebar
+6. **Canvas** (`public/office.js`): PixiJS v8 WebGL renderer with A* pathfinding, animated bee characters, elevator, sliding doors, dynamic expressions, interaction point seating
 
 ### Hook Events Consumed
 
 | Event | Bee Behavior |
 |---|---|
 | `SessionStart` | Queen arrives in Lobby |
-| `UserPromptSubmit` | Queen moves to Meeting Room, thinks |
-| `PreToolUse` (Read/Glob/Grep) | Queen moves to Library |
-| `PreToolUse` (Edit/Write) | Queen moves to Coding Desks |
+| `UserPromptSubmit` | Queen moves to Conference Room, thinks |
+| `PreToolUse` (Read/Glob/Grep/Edit/Write/Web) | Queen moves to Team Office |
 | `PreToolUse` (Bash) | Queen moves to Server Room |
-| `PreToolUse` (Task) | Queen moves to Meeting Room |
+| `PreToolUse` (Task) | Queen moves to Conference Room |
 | `PostToolUse` | Activity completed indicator |
 | `PostToolUseFailure` | Error state, queen rethinks |
-| `Stop` | Queen moves to Stage, presents |
-| `SubagentStart` | Worker bee spawns, flies to assigned room |
+| `Stop` | Queen moves to Conference Room, presents |
+| `SubagentStart` | Worker bee spawns, walks to assigned room |
 | `SubagentStop` | Worker bee celebrates, then disappears |
 | `SessionEnd` | Queen returns to Lobby |
-| (idle 8s) | Queen wanders to Coffee Bar or Break Area |
+| (idle 8s) | Queen wanders to Kitchen or Lounge |
 
-### Room Layout (Canvas Coordinates)
+### Room Layout (Backend Coordinates — multiply by COORD_SCALE=2 for canvas)
 
-| Room | Position | Size | Purpose |
-|---|---|---|---|
-| Break Area | (20, 40) | 160x120 | Idle state |
-| Coding Desks | (220, 40) | 240x140 | Edit, Write |
-| Library | (500, 40) | 220x140 | Read, Glob, Grep, Web |
-| Coffee Bar | (20, 200) | 160x120 | Idle state |
-| Meeting Room | (220, 220) | 240x120 | Thinking, Task |
-| Server Room | (500, 220) | 220x120 | Bash commands |
-| Lobby | (20, 360) | 160x120 | Session start/end |
-| Stage | (220, 380) | 240x100 | Presenting results |
+| Room ID | Label | Position | Size | Purpose |
+|---|---|---|---|---|
+| `lobby` | Lobby | (20, 200) | 100x30 | Session start/end |
+| `desk` | Team Office | (125, 20) | 300x170 | All file operations (Read, Write, Edit, Glob, Grep, Web) |
+| `phone-a` | Phone Booth | (20, 20) | 40x50 | Ambient bee space |
+| `phone-b` | Phone Booth | (530, 20) | 40x50 | Ambient bee space |
+| `server-room` | Server Closet | (500, 235) | 60x80 | Bash commands |
+| `meeting-room` | Conference Room | (20, 235) | 100x100 | Thinking, Task, presenting |
+| `water-cooler` | Lounge | (320, 235) | 125x100 | Idle state |
+| `coffee` | Kitchen | (170, 235) | 100x100 | Idle state |
 
 ## Key Files
 
 | File | Purpose |
 |---|---|
 | `src/types.ts` | All TypeScript interfaces: `ClaudeEvent`, `BeeCharacter`, `Room`, `OfficeState`, etc. |
-| `src/office.ts` | Core state engine. `processEvent()` is the main entry point. `ROOMS` array defines layout. `toolToRoom()` and `toolToActivity()` map tools to bee behavior |
+| `src/office.ts` | Core state engine. `processEvent()` main entry point. `ROOMS` array, `toolToRoom()`, `toolToActivity()`, auto project detection via `scanLocalProjects()` |
 | `src/watcher.ts` | `ClaudeWatcher` extends EventEmitter. Tracks file byte offset for incremental reads |
-| `src/server.ts` | Express + ws. `broadcastState()`, `broadcastSpeech()` push to clients |
+| `src/server.ts` | Express + ws. `broadcastState()`, `broadcastSpeech()`, REST APIs for sessions/shop/chat |
 | `src/voice.ts` | `Voice.speak()` returns audio Buffer. `stripCode()` removes markdown/code from text |
+| `src/shop.ts` | `HONEY_REWARDS` mapping, `SHOP_SKINS`, `SHOP_ACCESSORIES` catalogs, `ShopManager` class |
+| `src/chat.ts` | `ChatHandler` — Recruiter Bee chat via Firebase Cloud Functions, agent script generation, PR creation |
+| `src/relay.ts` | `Relay` — optional sync to Clearly cloud for multi-office building view |
 | `src/index.ts` | Wires components: `watcher.on('event')` → `office.processEvent()` → `server.broadcastState()` |
-| `public/office.js` | Canvas renderer. `draw()` is the animation loop. `drawBee()` renders characters with wings, expressions, crowns. `updateBee()` interpolates positions |
+| `public/office.js` | PixiJS v8 renderer. `initPixi()` bootstraps app. `createBeeGraphics()` draws bees. `syncBees()` syncs state. A* pathfinding, elevator, doors, expressions |
 | `hooks/event-logger.sh` | Bash script. Reads stdin JSON, adds timestamp via python3, appends to JSONL. Always exits 0 |
 
 ## Hook Configuration
@@ -104,12 +98,13 @@ To modify which events are captured, edit the `hooks` object in `.claude/setting
 1. Add room to `Room` type in `src/types.ts`
 2. Add room definition to `ROOMS` array in `src/office.ts` (x, y, width, height, color)
 3. Add tool mapping in `toolToRoom()` and `toolToActivity()` in `src/office.ts`
-4. Add room to `ROOMS` array in `public/office.js` (must match coordinates)
-5. Optionally add furniture in `FURNITURE` object in `public/office.js`
+4. Add room to `ROOMS` array in `public/office.js` (must match coordinates × COORD_SCALE)
+5. Add waypoint and edges in `WAYPOINTS`/`EDGES` arrays in `public/office.js`
+6. Optionally add furniture in `FURNITURE` object and interaction points in `INTERACTION_POINTS` in `public/office.js`
 
 ## Adding New Bee Characters
 
-Worker bees spawn automatically on `SubagentStart` events. To add persistent characters, push to `this.state.bees` in the `Office` constructor in `src/office.ts`.
+Worker bees spawn automatically on `SubagentStart` events. To add persistent ambient bees, add to the `AMBIENT_BEES` array in `public/office.js`. To add server-side bees, push to `this.state.bees` in the `Office` constructor in `src/office.ts`.
 
 ## Voice (ElevenLabs)
 
@@ -125,10 +120,3 @@ Worker bees spawn automatically on `SubagentStart` events. To add persistent cha
 - `chokidar` - File watching for JSONL event file
 - `@elevenlabs/elevenlabs-js` - TTS and STT (optional, gracefully degrades)
 - `tsx` - Dev-time TypeScript execution with watch mode
-
-## SVG Bee Assets
-
-11 Porto Rocha-designed bee logos in `public/assets/`:
-- `bee-icon.svg` — App icon (macOS squircle, 1024x1024)
-- `bee-logo-[1-5].svg` — Standard bee logos
-- `bee-logo-porto-[1-5].svg` — Porto Rocha style (warm honey tones, translucent wings, gradients)

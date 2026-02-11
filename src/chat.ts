@@ -375,17 +375,40 @@ async function run() {
 
   // Phase 1: Analyze
   await updateBee('reading', 'desk', 'Analyzing codebase...');
-  // TODO: Add analysis logic for TARGET_FILES
+  for (const file of TARGET_FILES) {
+    console.log(\`  Checking: \${file}\`);
+    try {
+      const content = require('fs').readFileSync(path.resolve(PROJECT_ROOT, file), 'utf8');
+      console.log(\`    \${content.split('\\n').length} lines\`);
+    } catch {
+      console.log(\`    (file not found)\`);
+    }
+  }
 
   // Phase 2: Process
   if (!DRY_RUN) {
     await updateBee('coding', 'desk', 'Running improvements...');
-    // TODO: Add Claude Code invocation
+    const { execSync } = require('child_process');
+    try {
+      execSync(\`npx claude -p "Analyze and improve these files: \${TARGET_FILES.join(', ')}. Context: {{CONVERSATION_CONTEXT}}"\`, {
+        cwd: PROJECT_ROOT,
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+    } catch (err) {
+      console.error('  Claude Code invocation failed:', (err as Error).message);
+    }
   }
 
   // Phase 3: Verify
   await updateBee('running-command', 'server-room', 'Building...');
-  // TODO: Add build verification
+  try {
+    const { execSync } = require('child_process');
+    execSync('npm run build', { cwd: PROJECT_ROOT, stdio: 'inherit', timeout: 60_000 });
+    console.log('  Build: OK');
+  } catch {
+    console.error('  Build: FAILED');
+  }
 
   await updateBee('celebrating', 'lobby', 'Done!');
   console.log('  Complete!');

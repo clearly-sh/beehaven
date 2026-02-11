@@ -173,12 +173,10 @@ async function main() {
       await flushNewTranscriptText(transcriptPath, server, voice, office);
     }
 
-    // On Stop events, do multiple delayed re-reads — the transcript may not be
+    // On Stop events, do a single delayed re-read — the transcript may not be
     // fully flushed when the hook fires, so the final response gets missed.
     if (event.hook_event_name === 'Stop' && lastTranscriptPath) {
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 300);
       setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 1000);
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 2500);
     }
 
     // Mark session start

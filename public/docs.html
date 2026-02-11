@@ -230,45 +230,48 @@
     <!-- Rooms -->
     <section id="rooms">
       <h2>Room Guide</h2>
-      <p>The office has 8 rooms. Bees move to different rooms based on what Claude Code is doing.</p>
+      <p>The office is a WeWork-style layout with 8 rooms across two floors connected by a hallway and elevator. Bees move between rooms based on what Claude Code is doing.</p>
 
       <div class="room-grid">
         <div class="card room-card">
-          <div class="card-title"><span class="emoji">&#x1F3E2;</span> Reception (Lobby)</div>
+          <div class="card-title"><span class="emoji">&#x1F3E2;</span> Lobby</div>
           <div class="room-trigger">Triggered by: Session start/end</div>
-          <div class="card-desc">Where bees arrive and depart. The queen starts here at session begin.</div>
+          <div class="card-desc">Where bees arrive and depart. The queen starts here at session begin and returns on session end.</div>
         </div>
         <div class="card room-card">
-          <div class="card-title"><span class="emoji">&#x1F4BB;</span> Team Office (Desk)</div>
-          <div class="room-trigger">Triggered by: Read, Write, Edit, Glob, Grep</div>
-          <div class="card-desc">Main workspace with 6 desks + standing desk. Where coding and file reading happen.</div>
+          <div class="card-title"><span class="emoji">&#x1F4BB;</span> Team Office</div>
+          <div class="room-trigger">Triggered by: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch</div>
+          <div class="card-desc">Main workspace with 6 desks, standing desk, and monitors. Where coding and file operations happen. Largest room in the office.</div>
         </div>
         <div class="card room-card">
           <div class="card-title"><span class="emoji">&#x1F4DE;</span> Phone Booths (A &amp; B)</div>
-          <div class="room-trigger">Triggered by: Private calls</div>
-          <div class="card-desc">Two private phone booths for focused work.</div>
+          <div class="room-trigger">Ambient bee space</div>
+          <div class="card-desc">Two small private booths flanking the Team Office. Not triggered by tools directly.</div>
         </div>
         <div class="card room-card">
           <div class="card-title"><span class="emoji">&#x26A1;</span> Server Room</div>
           <div class="room-trigger">Triggered by: Bash commands</div>
-          <div class="card-desc">Where terminal commands run. Server racks with blinking LEDs.</div>
+          <div class="card-desc">Where terminal commands run. Server racks with blinking LEDs and status lights.</div>
         </div>
         <div class="card room-card">
           <div class="card-title"><span class="emoji">&#x1F91D;</span> Conference Room</div>
           <div class="room-trigger">Triggered by: User prompts, Task tool, Stop</div>
-          <div class="card-desc">Meeting table with 10 chairs. For thinking and presenting results.</div>
+          <div class="card-desc">Conference table with 10 chairs. Where the queen thinks on prompts and presents results.</div>
         </div>
         <div class="card room-card">
           <div class="card-title"><span class="emoji">&#x2615;</span> Kitchen</div>
           <div class="room-trigger">Triggered by: Idle (8s timeout)</div>
-          <div class="card-desc">Espresso machine, fruit water dispensers, bar stools. WeWork signature.</div>
+          <div class="card-desc">Espresso machine with rising steam, fruit water dispensers, bar stools.</div>
         </div>
         <div class="card room-card">
           <div class="card-title"><span class="emoji">&#x1F6CB;</span> Lounge</div>
-          <div class="room-trigger">Triggered by: Idle</div>
-          <div class="card-desc">L-shaped sofa, coffee table, plants. For casual breaks.</div>
+          <div class="room-trigger">Triggered by: Idle (8s timeout)</div>
+          <div class="card-desc">L-shaped sofa, coffee table, plants. For casual breaks between tasks.</div>
         </div>
       </div>
+
+      <h3>Additional Features</h3>
+      <p>An <strong>elevator</strong> connects the upper floor (Team Office, Phone Booths) and lower floor (Conference, Kitchen, Lounge, Server Room) with animated cab movement and sliding doors. Rooms have <strong>sliding glass doors</strong> that open automatically when bees approach.</p>
     </section>
 
     <!-- Shortcuts -->
@@ -317,12 +320,41 @@
         </thead>
         <tbody>
           <tr><td><code>src/watcher.ts</code></td><td>Polls JSONL file for new events, emits ClaudeEvent objects</td></tr>
-          <tr><td><code>src/office.ts</code></td><td>State machine mapping events to bee positions/activities</td></tr>
-          <tr><td><code>src/server.ts</code></td><td>Express + WebSocket server, pushes state to browsers</td></tr>
-          <tr><td><code>src/voice.ts</code></td><td>ElevenLabs TTS/STT integration</td></tr>
-          <tr><td><code>public/office.js</code></td><td>PixiJS canvas renderer with A* pathfinding</td></tr>
+          <tr><td><code>src/office.ts</code></td><td>State machine mapping events to bee positions/activities across 8 rooms. Auto-detects projects on startup</td></tr>
+          <tr><td><code>src/server.ts</code></td><td>Express + WebSocket server, pushes state at 2Hz to all connected browsers</td></tr>
+          <tr><td><code>src/voice.ts</code></td><td>ElevenLabs TTS/STT integration (optional, degrades gracefully)</td></tr>
+          <tr><td><code>src/shop.ts</code></td><td>Honey rewards, skins, accessories. Persists to <code>~/.beehaven/config.json</code></td></tr>
+          <tr><td><code>src/chat.ts</code></td><td>Recruiter Bee chat — connects to Firebase Cloud Functions for AI responses</td></tr>
+          <tr><td><code>src/relay.ts</code></td><td>Optional sync to Clearly cloud for multi-office building view</td></tr>
+          <tr><td><code>public/office.js</code></td><td>PixiJS v8 WebGL renderer with A* waypoint pathfinding, elevator, sliding doors, dynamic bee expressions</td></tr>
         </tbody>
       </table>
+
+      <h3>Additional Features</h3>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F512;</span> PIN Login</div>
+        <div class="card-desc">Optional 4-digit PIN lock screen. Set via the server; skip available for local development.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F3E2;</span> Building View</div>
+        <div class="card-desc">Multi-project overview showing each project as a floor in an isometric building. Switch between single office and building views.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F4AC;</span> Recruiter Bee Chat</div>
+        <div class="card-desc">AI-powered chat panel using Firebase Cloud Functions. Asks questions about your project, generates agent scripts, and creates PRs.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F4CB;</span> Session History</div>
+        <div class="card-desc">Activity tab shows scrollable session cards. Click any past session to replay its event log. Sessions persist to <code>~/.beehaven/sessions/</code>.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F60A;</span> Dynamic Expressions</div>
+        <div class="card-desc">Bees change facial expressions based on activity: focused (coding), happy (presenting), sleepy (idle), surprised (errors).</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="emoji">&#x1F6AA;</span> Sliding Doors</div>
+        <div class="card-desc">Room doors slide open when bees approach and close when they leave. Smooth animated panels.</div>
+      </div>
     </section>
 
     <!-- Shop -->
@@ -338,10 +370,11 @@
         <tbody>
           <tr><td>Session Start</td><td>+5</td></tr>
           <tr><td>User Prompt</td><td>+2</td></tr>
-          <tr><td>Tool Use</td><td>+1</td></tr>
-          <tr><td>Tool Complete</td><td>+1</td></tr>
-          <tr><td>Response Complete</td><td>+3</td></tr>
-          <tr><td>Worker Bee Deployed</td><td>+2</td></tr>
+          <tr><td>Tool Use (PreToolUse)</td><td>+1</td></tr>
+          <tr><td>Tool Complete (PostToolUse)</td><td>+1</td></tr>
+          <tr><td>Worker Bee Deployed (SubagentStart)</td><td>+3</td></tr>
+          <tr><td>Response Complete (Stop)</td><td>+5</td></tr>
+          <tr><td>Session End</td><td>+10</td></tr>
         </tbody>
       </table>
 
