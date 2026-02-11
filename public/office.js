@@ -77,6 +77,21 @@ let lastShopKey = '';      // fingerprint for shop panel
 let lastHoney = 0;         // track honey for earning animation
 let lastQueenZone = 'upper'; // track queen zone for elevator
 
+// --- Multi-Office Building View State ---
+let viewMode = 'single'; // 'single' | 'building'
+let buildingTransition = 0; // 0 = single, 1 = building (animated)
+let buildingTransitionTarget = 0;
+let buildingProjects = []; // project names for building view
+let buildingClickAreas = []; // { project, x, y, w, h } for click detection
+
+// --- Floating Terminal Window State ---
+const TERM_DEFAULTS = { x: 16, y: null, width: 560, height: 380, minimized: false, visible: true };
+let termWindow = { ...TERM_DEFAULTS };
+let termDragging = false, termResizing = false, termResizeDir = '';
+let termDragOffset = { x: 0, y: 0 };
+let termPreMaximize = null;
+let shopOpen = false;
+
 // --- Elevator Constants ---
 const ELEV = {
   shaftX: 920, shaftY: 80, shaftW: 60, shaftH: 580,
@@ -109,8 +124,296 @@ let elevator = {
   indicatorText: null, indicatorBg: null,
 };
 
+// --- A* Waypoint Pathfinding ---
+const WAYPOINTS = [
+  { id: 'phone-a',      x: 80,   y: 90,   room: 'phone-a' },
+  { id: 'desk',         x: 500,  y: 200,  room: 'desk' },
+  { id: 'phone-b',      x: 1100, y: 90,   room: 'phone-b' },
+  { id: 'lobby',        x: 140,  y: 425,  room: 'lobby' },
+  { id: 'meeting-room', x: 140,  y: 570,  room: 'meeting-room' },
+  { id: 'coffee',       x: 440,  y: 570,  room: 'coffee' },
+  { id: 'water-cooler', x: 765,  y: 570,  room: 'water-cooler' },
+  { id: 'server-room',  x: 1060, y: 550,  room: 'server-room' },
+  { id: 'hall-L',       x: 200,  y: 420,  room: null },
+  { id: 'hall-C',       x: 500,  y: 420,  room: null },
+  { id: 'hall-R',       x: 880,  y: 420,  room: null },
+];
+
+const EDGES = [
+  ['phone-a', 'desk'],      ['desk', 'phone-b'],
+  ['phone-a', 'hall-L'],    ['desk', 'hall-C'],
+  ['desk', 'hall-R'],       ['phone-b', 'hall-R'],
+  ['hall-L', 'hall-C'],     ['hall-C', 'hall-R'],
+  ['hall-L', 'lobby'],      ['lobby', 'meeting-room'],
+  ['hall-L', 'meeting-room'], ['hall-C', 'coffee'],
+  ['hall-R', 'water-cooler'], ['hall-R', 'server-room'],
+];
+
+// Build adjacency map once
+const ADJ = {};
+for (const wp of WAYPOINTS) ADJ[wp.id] = [];
+for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
+
+// Waypoint lookup by id
+const WP_MAP = {};
+for (const wp of WAYPOINTS) WP_MAP[wp.id] = wp;
+
+function wpDist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function aStarPath(startId, goalId) {
+  if (startId === goalId) return [WP_MAP[goalId]];
+  const goal = WP_MAP[goalId];
+  if (!goal) return null;
+
+  const openSet = new Set([startId]);
+  const cameFrom = {};
+  const gScore = {};
+  const fScore = {};
+
+  for (const wp of WAYPOINTS) {
+    gScore[wp.id] = Infinity;
+    fScore[wp.id] = Infinity;
+  }
+  gScore[startId] = 0;
+  fScore[startId] = wpDist(WP_MAP[startId], goal);
+
+  while (openSet.size > 0) {
+    let current = null, minF = Infinity;
+    for (const id of openSet) {
+      if (fScore[id] < minF) { minF = fScore[id]; current = id; }
+    }
+
+    if (current === goalId) {
+      const path = [goalId];
+      let c = goalId;
+      while (cameFrom[c]) { c = cameFrom[c]; path.unshift(c); }
+      return path.map(id => WP_MAP[id]);
+    }
+
+    openSet.delete(current);
+    for (const neighbor of ADJ[current]) {
+      const tentG = gScore[current] + wpDist(WP_MAP[current], WP_MAP[neighbor]);
+      if (tentG < gScore[neighbor]) {
+        cameFrom[neighbor] = current;
+        gScore[neighbor] = tentG;
+        fScore[neighbor] = tentG + wpDist(WP_MAP[neighbor], goal);
+        openSet.add(neighbor);
+      }
+    }
+  }
+  return null;
+}
+
+function findNearestWaypoint(x, y, roomId) {
+  // Prefer waypoint in the same room
+  let best = null, bestDist = Infinity;
+  if (roomId) {
+    for (const wp of WAYPOINTS) {
+      if (wp.room === roomId) {
+        const d = Math.hypot(x - wp.x, y - wp.y);
+        if (d < bestDist) { bestDist = d; best = wp; }
+      }
+    }
+  }
+  // Fallback: nearest waypoint overall
+  if (!best) {
+    for (const wp of WAYPOINTS) {
+      const d = Math.hypot(x - wp.x, y - wp.y);
+      if (d < bestDist) { bestDist = d; best = wp; }
+    }
+  }
+  return best;
+}
+
+function computePath(fromX, fromY, fromRoom, toX, toY, toRoom) {
+  const startWP = findNearestWaypoint(fromX, fromY, fromRoom);
+  const endWP = findNearestWaypoint(toX, toY, toRoom);
+  if (!startWP || !endWP) return null;
+  if (startWP.id === endWP.id) return [{ x: toX, y: toY }];
+
+  const wpPath = aStarPath(startWP.id, endWP.id);
+  if (!wpPath || wpPath.length === 0) return null;
+
+  // Skip first waypoint (we're already near it), add final target position
+  const coords = wpPath.slice(1).map(wp => ({ x: wp.x, y: wp.y }));
+  coords.push({ x: toX, y: toY });
+  return coords;
+}
+
+/** Determine which room contains a given canvas coordinate */
+function findRoomAtPosition(x, y) {
+  for (const room of ROOMS) {
+    if (x >= room.x && x <= room.x + room.w && y >= room.y && y <= room.y + room.h) {
+      return room.id;
+    }
+  }
+  return null;
+}
+
+// --- Login / PIN ---
+const PIN_STORAGE_KEY = 'beehaven-pin-hash';
+let pinDigits = [];
+let pinMode = 'verify'; // 'create' | 'confirm' | 'verify'
+let pinFirstEntry = '';
+
+async function hashPin(pin) {
+  const data = new TextEncoder().encode('beehaven-salt-' + pin);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function updatePinDots() {
+  const dots = document.querySelectorAll('.pin-dot');
+  dots.forEach((dot, i) => {
+    dot.classList.toggle('filled', i < pinDigits.length);
+  });
+}
+
+async function handlePinComplete() {
+  const pin = pinDigits.join('');
+  const hash = await hashPin(pin);
+
+  if (pinMode === 'create') {
+    pinFirstEntry = hash;
+    pinMode = 'confirm';
+    pinDigits = [];
+    updatePinDots();
+    document.getElementById('login-mode-label').textContent = 'Confirm PIN';
+    return;
+  }
+
+  if (pinMode === 'confirm') {
+    if (hash === pinFirstEntry) {
+      localStorage.setItem(PIN_STORAGE_KEY, hash);
+      loginSuccess();
+    } else {
+      showPinError("PINs don't match — try again");
+      pinMode = 'create';
+      document.getElementById('login-mode-label').textContent = 'Create PIN';
+    }
+    return;
+  }
+
+  // Verify mode
+  const stored = localStorage.getItem(PIN_STORAGE_KEY);
+  if (hash === stored) {
+    loginSuccess();
+  } else {
+    showPinError('Wrong PIN — try again');
+  }
+}
+
+function showPinError(msg) {
+  const el = document.getElementById('pin-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  pinDigits = [];
+  updatePinDots();
+  // Re-trigger shake animation
+  el.style.animation = 'none';
+  requestAnimationFrame(() => { el.style.animation = ''; });
+  setTimeout(() => el.classList.add('hidden'), 2500);
+}
+
+function loginSuccess() {
+  sessionStorage.setItem('beehaven-session', '1');
+  const loginScreen = document.getElementById('login-screen');
+  const main = document.getElementById('main');
+  const header = document.getElementById('header');
+
+  // Animate out login
+  loginScreen.classList.add('hidden');
+
+  // Animate in office
+  setTimeout(() => {
+    loginScreen.style.display = 'none';
+    main.classList.remove('main-hidden');
+    main.classList.add('main-visible');
+    if (header) header.style.opacity = '1';
+  }, 400);
+}
+
+function initLogin() {
+  const loginScreen = document.getElementById('login-screen');
+  if (!loginScreen) { return; }
+
+  // Skip login if already authenticated this tab session
+  if (sessionStorage.getItem('beehaven-session')) {
+    loginScreen.style.display = 'none';
+    document.getElementById('main').classList.remove('main-hidden');
+    document.getElementById('main').classList.add('main-visible');
+    document.getElementById('header').style.opacity = '1';
+    return;
+  }
+
+  // Hide header until logged in
+  document.getElementById('header').style.opacity = '0';
+
+  // Determine mode
+  const storedHash = localStorage.getItem(PIN_STORAGE_KEY);
+  if (storedHash) {
+    pinMode = 'verify';
+    document.getElementById('login-mode-label').textContent = 'Enter PIN';
+  } else {
+    pinMode = 'create';
+    document.getElementById('login-mode-label').textContent = 'Create PIN';
+  }
+
+  // Bind numpad
+  document.querySelectorAll('.pin-key').forEach(key => {
+    key.addEventListener('click', () => {
+      const k = key.dataset.key;
+      document.getElementById('pin-error')?.classList.add('hidden');
+
+      if (k === 'back') {
+        pinDigits.pop();
+        updatePinDots();
+      } else if (k === 'enter') {
+        if (pinDigits.length === 4) handlePinComplete();
+      } else {
+        if (pinDigits.length < 4) {
+          pinDigits.push(k);
+          updatePinDots();
+          if (pinDigits.length === 4) {
+            setTimeout(() => handlePinComplete(), 150);
+          }
+        }
+      }
+    });
+  });
+
+  // Skip login button
+  document.getElementById('login-skip')?.addEventListener('click', () => {
+    loginSuccess();
+  });
+
+  // Keyboard input
+  document.addEventListener('keydown', (e) => {
+    if (loginScreen.style.display === 'none') return;
+    if (e.key >= '0' && e.key <= '9') {
+      if (pinDigits.length < 4) {
+        pinDigits.push(e.key);
+        updatePinDots();
+        if (pinDigits.length === 4) {
+          setTimeout(() => handlePinComplete(), 150);
+        }
+      }
+    } else if (e.key === 'Backspace') {
+      pinDigits.pop();
+      updatePinDots();
+    } else if (e.key === 'Enter') {
+      if (pinDigits.length === 4) handlePinComplete();
+    }
+  });
+}
+
 // --- Init ---
 async function init() {
+  // Initialize login screen first
+  initLogin();
+
   app = new Application();
   await app.init({
     width: CANVAS_W,
@@ -129,20 +432,48 @@ async function init() {
   layers.furniture = new Container();
   layers.bees = new Container();
   layers.ui = new Container();
+  layers.buildingOverlay = new Container();
+  layers.buildingOverlay.visible = false;
 
-  app.stage.addChild(layers.floor, layers.rooms, layers.furniture, layers.bees, layers.ui);
+  // Main office container (scaled for building view)
+  layers.officeRoot = new Container();
+  layers.officeRoot.addChild(layers.floor, layers.rooms, layers.furniture, layers.bees, layers.ui);
+  app.stage.addChild(layers.officeRoot, layers.buildingOverlay);
+
+  // Effects layer (between furniture and bees)
+  layers.effects = new Container();
+  layers.officeRoot.addChildAt(layers.effects, layers.officeRoot.children.indexOf(layers.bees));
 
   drawFloor();
   drawRooms();
   drawFurniture();
   createElevator();
   initAmbientBees();
+  initVisualEffects();
 
   // Animation loop
   app.ticker.add(() => {
     frame++;
     updateAllBees();
     updateElevator();
+    updateVisualEffects();
+    updateBuildingTransition();
+  });
+
+  // Canvas click for building view
+  app.canvas.addEventListener('click', (e) => {
+    if (viewMode !== 'building' || buildingTransition < 0.8) return;
+    const rect = app.canvas.getBoundingClientRect();
+    const scaleX = CANVAS_W / rect.width;
+    const scaleY = CANVAS_H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    for (const area of buildingClickAreas) {
+      if (cx >= area.x && cx <= area.x + area.w && cy >= area.y && cy <= area.y + area.h) {
+        exitBuildingView(area.project);
+        break;
+      }
+    }
   });
 
   // Connect WebSocket
@@ -150,6 +481,127 @@ async function init() {
 
   // Bind UI
   bindUI();
+}
+
+// --- Room Doors ---
+// Each door: { room, edge: 'top'|'bottom'|'left'|'right', pos: fraction (0-1) along that wall, gap: px }
+const DOORS = [
+  // Upper rooms connect down to hallway
+  { room: 'phone-a',     edge: 'bottom', pos: 0.5, gap: 30 },
+  { room: 'desk',        edge: 'bottom', pos: 0.25, gap: 36 },  // left corridor
+  { room: 'desk',        edge: 'bottom', pos: 0.65, gap: 36 },  // right corridor
+  { room: 'phone-b',     edge: 'bottom', pos: 0.5, gap: 30 },
+  // Lower rooms connect up to hallway
+  { room: 'lobby',       edge: 'top', pos: 0.7, gap: 30 },
+  { room: 'lobby',       edge: 'bottom', pos: 0.5, gap: 30 },   // connects to meeting-room
+  { room: 'meeting-room', edge: 'top', pos: 0.5, gap: 36 },
+  { room: 'coffee',      edge: 'top', pos: 0.5, gap: 36 },
+  { room: 'water-cooler', edge: 'top', pos: 0.4, gap: 36 },
+  { room: 'server-room', edge: 'top', pos: 0.5, gap: 36 },
+];
+
+// Pre-index doors by room ID
+const DOORS_BY_ROOM = {};
+for (const d of DOORS) {
+  if (!DOORS_BY_ROOM[d.room]) DOORS_BY_ROOM[d.room] = [];
+  DOORS_BY_ROOM[d.room].push(d);
+}
+
+// --- Furniture Interaction Points ---
+// Specific coordinates where bees sit/stand at furniture
+const INTERACTION_POINTS = {
+  'desk': [
+    // 6 desks: 2 rows of 3 — chairs are at y+70 from desk top
+    { x: 355, y: 160, type: 'chair', facing: 'up' },   // row 0, col 0
+    { x: 525, y: 160, type: 'chair', facing: 'up' },   // row 0, col 1
+    { x: 695, y: 160, type: 'chair', facing: 'up' },   // row 0, col 2
+    { x: 355, y: 290, type: 'chair', facing: 'up' },   // row 1, col 0
+    { x: 525, y: 290, type: 'chair', facing: 'up' },   // row 1, col 1
+    { x: 695, y: 290, type: 'chair', facing: 'up' },   // row 1, col 2
+    { x: 860, y: 140, type: 'stand', facing: 'up' },   // standing desk
+  ],
+  'meeting-room': [
+    // Conference table chairs (5 each side)
+    { x: 80,  y: 524, type: 'chair', facing: 'down' },
+    { x: 110, y: 524, type: 'chair', facing: 'down' },
+    { x: 140, y: 524, type: 'chair', facing: 'down' },
+    { x: 170, y: 524, type: 'chair', facing: 'down' },
+    { x: 200, y: 524, type: 'chair', facing: 'down' },
+    { x: 80,  y: 598, type: 'chair', facing: 'up' },
+    { x: 110, y: 598, type: 'chair', facing: 'up' },
+    { x: 140, y: 598, type: 'chair', facing: 'up' },
+    { x: 170, y: 598, type: 'chair', facing: 'up' },
+    { x: 200, y: 598, type: 'chair', facing: 'up' },
+  ],
+  'coffee': [
+    // Bar stools
+    { x: 360, y: 568, type: 'stool', facing: 'up' },
+    { x: 410, y: 568, type: 'stool', facing: 'up' },
+    { x: 460, y: 568, type: 'stool', facing: 'up' },
+    { x: 510, y: 568, type: 'stool', facing: 'up' },
+    // Near espresso machine
+    { x: 385, y: 500, type: 'stand', facing: 'down' },
+  ],
+  'water-cooler': [
+    // L-shaped sofa spots
+    { x: 700, y: 545, type: 'sofa', facing: 'down' },
+    { x: 750, y: 545, type: 'sofa', facing: 'down' },
+    { x: 800, y: 545, type: 'sofa', facing: 'down' },
+    { x: 675, y: 570, type: 'sofa', facing: 'right' },
+    { x: 675, y: 610, type: 'sofa', facing: 'right' },
+    // Standing near coffee table
+    { x: 760, y: 600, type: 'stand', facing: 'down' },
+  ],
+  'server-room': [
+    // Near server racks
+    { x: 1030, y: 540, type: 'stand', facing: 'right' },
+    { x: 1075, y: 540, type: 'stand', facing: 'right' },
+    { x: 1050, y: 600, type: 'stand', facing: 'up' },
+  ],
+  'phone-a': [
+    { x: 77, y: 85, type: 'chair', facing: 'down' },
+  ],
+  'phone-b': [
+    { x: 1097, y: 85, type: 'chair', facing: 'down' },
+  ],
+  'lobby': [
+    { x: 100, y: 425, type: 'stand', facing: 'right' },
+    { x: 160, y: 435, type: 'stand', facing: 'left' },
+  ],
+};
+
+// Track which interaction points are occupied { 'room:index' -> beeId }
+const occupiedPoints = {};
+
+/** Find a free interaction point for a bee in a room. Queen gets priority (index 0). */
+function findInteractionPoint(roomId, beeId, isQueen) {
+  const points = INTERACTION_POINTS[roomId];
+  if (!points || points.length === 0) return null;
+
+  // Release any previous point held by this bee
+  for (const key of Object.keys(occupiedPoints)) {
+    if (occupiedPoints[key] === beeId) delete occupiedPoints[key];
+  }
+
+  // Queen gets first point
+  if (isQueen) {
+    const key = `${roomId}:0`;
+    occupiedPoints[key] = beeId;
+    return points[0];
+  }
+
+  // Workers take next available
+  for (let i = 0; i < points.length; i++) {
+    const key = `${roomId}:${i}`;
+    if (!occupiedPoints[key]) {
+      occupiedPoints[key] = beeId;
+      return points[i];
+    }
+  }
+
+  // All taken — return a random offset near a point
+  const pt = points[Math.floor(Math.random() * points.length)];
+  return { x: pt.x + (Math.random() - 0.5) * 20, y: pt.y + (Math.random() - 0.5) * 20, type: 'stand', facing: pt.facing };
 }
 
 // --- Floor ---
@@ -170,21 +622,73 @@ function drawFloor() {
 function drawRooms() {
   for (const room of ROOMS) {
     const c = new Container();
+    const { x, y, w, h } = room;
+    const r = 6; // corner radius
 
     // Floor fill
     const bg = new Graphics();
-    bg.roundRect(room.x, room.y, room.w, room.h, 6).fill({ color: room.color, alpha: 0.5 });
+    bg.roundRect(x, y, w, h, r).fill({ color: room.color, alpha: 0.5 });
     c.addChild(bg);
 
-    // Glass partition walls
+    // Glass partition walls with door gaps
     const walls = new Graphics();
-    walls.roundRect(room.x, room.y, room.w, room.h, 6)
-      .stroke({ color: P.glassBrd, width: 2, alpha: 0.6 });
+    const roomDoors = DOORS_BY_ROOM[room.id] || [];
+
+    // Collect door gaps per edge
+    const gapsByEdge = { top: [], bottom: [], left: [], right: [] };
+    for (const d of roomDoors) {
+      gapsByEdge[d.edge].push(d);
+    }
+
+    // Draw each wall edge as segments with gaps
+    const wallStyle = { color: P.glassBrd, width: 2, alpha: 0.6 };
+
+    // Top wall: left to right
+    drawWallWithGaps(walls, x + r, y, x + w - r, y, gapsByEdge.top, w - 2 * r, wallStyle);
+    // Bottom wall: left to right
+    drawWallWithGaps(walls, x + r, y + h, x + w - r, y + h, gapsByEdge.bottom, w - 2 * r, wallStyle);
+    // Left wall: top to bottom
+    drawWallWithGaps(walls, x, y + r, x, y + h - r, gapsByEdge.left, h - 2 * r, wallStyle, true);
+    // Right wall: top to bottom
+    drawWallWithGaps(walls, x + w, y + r, x + w, y + h - r, gapsByEdge.right, h - 2 * r, wallStyle, true);
+
+    // Corners (always drawn)
+    walls.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5).stroke(wallStyle);
+    walls.arc(x + w - r, y + r, r, Math.PI * 1.5, 0).stroke(wallStyle);
+    walls.arc(x + r, y + h - r, r, Math.PI * 0.5, Math.PI).stroke(wallStyle);
+    walls.arc(x + w - r, y + h - r, r, 0, Math.PI * 0.5).stroke(wallStyle);
     c.addChild(walls);
+
+    // Door indicators (subtle amber glow at openings)
+    const doorGfx = new Graphics();
+    for (const d of roomDoors) {
+      const halfGap = d.gap / 2;
+      let cx, cy;
+      if (d.edge === 'top') {
+        cx = x + r + (w - 2 * r) * d.pos; cy = y;
+      } else if (d.edge === 'bottom') {
+        cx = x + r + (w - 2 * r) * d.pos; cy = y + h;
+      } else if (d.edge === 'left') {
+        cx = x; cy = y + r + (h - 2 * r) * d.pos;
+      } else {
+        cx = x + w; cy = y + r + (h - 2 * r) * d.pos;
+      }
+      // Soft amber glow at door
+      doorGfx.circle(cx, cy, halfGap * 0.6).fill({ color: P.honey, alpha: 0.08 });
+      // Small door frame marks
+      if (d.edge === 'top' || d.edge === 'bottom') {
+        doorGfx.rect(cx - halfGap, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+        doorGfx.rect(cx + halfGap - 3, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+      } else {
+        doorGfx.rect(cx - 1.5, cy - halfGap, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+        doorGfx.rect(cx - 1.5, cy + halfGap - 3, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+      }
+    }
+    c.addChild(doorGfx);
 
     // Accent strip (top edge)
     const strip = new Graphics();
-    strip.roundRect(room.x, room.y, room.w, 4, 2).fill(room.accent);
+    strip.roundRect(x, y, w, 4, 2).fill(room.accent);
     c.addChild(strip);
 
     // Room label
@@ -198,11 +702,44 @@ function drawRooms() {
         letterSpacing: 0.5,
       }),
     });
-    label.x = room.x + 8;
-    label.y = room.y + 10;
+    label.x = x + 8;
+    label.y = y + 10;
     c.addChild(label);
 
     layers.rooms.addChild(c);
+  }
+}
+
+/** Draw a wall edge as line segments, skipping gaps at door positions */
+function drawWallWithGaps(g, x1, y1, x2, y2, doors, wallLen, style, vertical = false) {
+  if (doors.length === 0) {
+    g.moveTo(x1, y1).lineTo(x2, y2).stroke(style);
+    return;
+  }
+
+  // Sort doors by position
+  const sorted = [...doors].sort((a, b) => a.pos - b.pos);
+
+  // Build list of segments to draw
+  let cursor = 0; // 0-1 progress along the wall
+  for (const d of sorted) {
+    const halfGap = (d.gap / 2) / wallLen;
+    const gapStart = Math.max(0, d.pos - halfGap);
+    const gapEnd = Math.min(1, d.pos + halfGap);
+
+    if (cursor < gapStart) {
+      // Draw segment from cursor to gapStart
+      const ax = x1 + (x2 - x1) * cursor, ay = y1 + (y2 - y1) * cursor;
+      const bx = x1 + (x2 - x1) * gapStart, by = y1 + (y2 - y1) * gapStart;
+      g.moveTo(ax, ay).lineTo(bx, by).stroke(style);
+    }
+    cursor = gapEnd;
+  }
+
+  // Draw remaining segment after last gap
+  if (cursor < 1) {
+    const ax = x1 + (x2 - x1) * cursor, ay = y1 + (y2 - y1) * cursor;
+    g.moveTo(ax, ay).lineTo(x2, y2).stroke(style);
   }
 }
 
@@ -967,8 +1504,10 @@ function initAmbientBees() {
   for (const def of AMBIENT_BEES) {
     const room = ROOMS.find(r => r.id === def.homeRoom);
     if (!room) continue;
-    const x = room.x + room.w * (0.3 + Math.random() * 0.4);
-    const y = room.y + room.h * (0.3 + Math.random() * 0.4);
+    // Use interaction point for starting position
+    const ipt = findInteractionPoint(def.homeRoom, def.id, false);
+    const x = ipt ? ipt.x : room.x + room.w * (0.3 + Math.random() * 0.4);
+    const y = ipt ? ipt.y : room.y + room.h * (0.3 + Math.random() * 0.4);
 
     const gfx = createBeeGraphics(def);
     gfx.x = x;
@@ -986,25 +1525,41 @@ function initAmbientBees() {
       gfx,
       wingPhase: Math.random() * Math.PI * 2,
       idleTimer: 0,
+      path: null,
+      pathIndex: 0,
     };
   }
 }
 
 function updateAmbientBee(bee) {
-  // Idle wandering within home room
+  // Idle wandering within current room (no pathfinding for intra-room moves)
   bee.idleTimer = (bee.idleTimer || 0) + 1;
-  if (bee.idleTimer > 300 + Math.random() * 200) {
+  if (!bee.path && bee.idleTimer > 300 + Math.random() * 200) {
     bee.idleTimer = 0;
-    const room = ROOMS.find(r => r.id === bee.homeRoom);
+    const room = ROOMS.find(r => r.id === bee.room);
     if (room) {
       bee.targetX = room.x + room.w * (0.2 + Math.random() * 0.6);
       bee.targetY = room.y + room.h * (0.25 + Math.random() * 0.5);
     }
   }
 
-  // Lerp
-  bee.drawX += (bee.targetX - bee.drawX) * 0.03;
-  bee.drawY += (bee.targetY - bee.drawY) * 0.03;
+  // Path following (inter-room) or direct lerp (intra-room)
+  if (bee.path && bee.pathIndex < bee.path.length) {
+    const wp = bee.path[bee.pathIndex];
+    bee.drawX += (wp.x - bee.drawX) * 0.04;
+    bee.drawY += (wp.y - bee.drawY) * 0.04;
+    const dx = wp.x - bee.drawX, dy = wp.y - bee.drawY;
+    if (dx * dx + dy * dy < 100) {
+      bee.pathIndex++;
+      if (bee.pathIndex >= bee.path.length) {
+        bee.path = null;
+        bee.pathIndex = 0;
+      }
+    }
+  } else {
+    bee.drawX += (bee.targetX - bee.drawX) * 0.03;
+    bee.drawY += (bee.targetY - bee.drawY) * 0.03;
+  }
   bee.gfx.x = bee.drawX;
   bee.gfx.y = bee.drawY;
 
@@ -1030,8 +1585,13 @@ function syncBees(serverBees) {
     if (ambientBees[bee.id]) continue;
 
     seen.add(bee.id);
-    const sx = bee.targetX * COORD_SCALE;
-    const sy = bee.targetY * COORD_SCALE;
+    let sx = bee.targetX * COORD_SCALE;
+    let sy = bee.targetY * COORD_SCALE;
+
+    // Snap to interaction point if available
+    const isQueen = bee.role === 'queen' || bee.id === 'queen';
+    const ipt = findInteractionPoint(bee.room, bee.id, isQueen);
+    if (ipt) { sx = ipt.x; sy = ipt.y; }
 
     // Determine visibility based on project filter
     const visible = !projectFilter || !bee.project || bee.project === projectFilter;
@@ -1039,11 +1599,27 @@ function syncBees(serverBees) {
     if (localBees[bee.id]) {
       // Update existing
       const lb = localBees[bee.id];
+      const oldRoom = lb.room;
       lb.targetX = sx;
       lb.targetY = sy;
       lb.room = bee.room;
       lb.activity = bee.activity;
       lb.gfx.visible = visible;
+
+      // Compute A* path on room change (only if not already walking to correct destination)
+      if (oldRoom && oldRoom !== bee.room) {
+        // Don't clobber if we're mid-path to the same target room
+        if (!lb.path || lb._pathTargetRoom !== bee.room) {
+          const path = computePath(lb.drawX, lb.drawY, oldRoom, sx, sy, bee.room);
+          if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
+        }
+      }
+      // Also compute path if bee has no path but is far from target (missed room change)
+      if (!lb.path && Math.hypot(sx - lb.drawX, sy - lb.drawY) > 120) {
+        const currentRoom = findRoomAtPosition(lb.drawX, lb.drawY) || oldRoom || 'lobby';
+        const path = computePath(lb.drawX, lb.drawY, currentRoom, sx, sy, bee.room);
+        if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
+      }
 
       // Recreate graphics if skin color changed (e.g. shop equip)
       if (bee.color && bee.color !== lb.color) {
@@ -1066,27 +1642,40 @@ function syncBees(serverBees) {
         updateSpeechBubble(lb, bee.message);
       }
     } else {
-      // Create new bee
+      // Create new bee — start at lobby so they walk to their target room
       const gfx = createBeeGraphics(bee);
-      const startX = bee.x * COORD_SCALE;
-      const startY = bee.y * COORD_SCALE;
-      gfx.x = startX;
-      gfx.y = startY;
+      const lobbyRoom = ROOMS.find(r => r.id === 'lobby');
+      const spawnX = lobbyRoom ? lobbyRoom.x + lobbyRoom.w / 2 : 140;
+      const spawnY = lobbyRoom ? lobbyRoom.y + lobbyRoom.h / 2 : 430;
+      gfx.x = spawnX;
+      gfx.y = spawnY;
       layers.bees.addChild(gfx);
 
       gfx.visible = visible;
-      localBees[bee.id] = {
+      const lb = {
         ...bee,
         color: bee.color,
-        drawX: startX,
-        drawY: startY,
+        drawX: spawnX,
+        drawY: spawnY,
         targetX: sx,
         targetY: sy,
         gfx,
         wingPhase: Math.random() * Math.PI * 2,
         lastMessage: bee.message,
+        path: null,
+        pathIndex: 0,
       };
-      updateSpeechBubble(localBees[bee.id], bee.message);
+      localBees[bee.id] = lb;
+
+      // Compute initial A* path from lobby to target room (using interaction point coords)
+      const dist = Math.hypot(lb.targetX - spawnX, lb.targetY - spawnY);
+      if (dist > 80) {
+        const spawnRoom = findRoomAtPosition(spawnX, spawnY) || 'lobby';
+        const path = computePath(spawnX, spawnY, spawnRoom, lb.targetX, lb.targetY, bee.room);
+        if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
+      }
+
+      updateSpeechBubble(lb, bee.message);
     }
   }
 
@@ -1154,12 +1743,20 @@ function moveAmbientBeesForContext(serverBees) {
 
 function moveAmbientTo(bee, roomId) {
   if (bee.room === roomId) return;
-  bee.room = roomId;
+  const oldRoom = bee.room;
   const room = ROOMS.find(r => r.id === roomId);
   if (room) {
-    bee.targetX = room.x + room.w * (0.25 + Math.random() * 0.5);
-    bee.targetY = room.y + room.h * (0.3 + Math.random() * 0.4);
+    // Use interaction point if available
+    const ipt = findInteractionPoint(roomId, bee.id, false);
+    const tx = ipt ? ipt.x : room.x + room.w * (0.25 + Math.random() * 0.5);
+    const ty = ipt ? ipt.y : room.y + room.h * (0.3 + Math.random() * 0.4);
+    bee.targetX = tx;
+    bee.targetY = ty;
+    // Compute A* path for inter-room transition
+    const path = computePath(bee.drawX, bee.drawY, oldRoom, tx, ty, roomId);
+    if (path) { bee.path = path; bee.pathIndex = 0; }
   }
+  bee.room = roomId;
 }
 
 // --- Animation ---
@@ -1167,8 +1764,24 @@ function updateAllBees() {
   // Backend bees
   for (const bee of Object.values(localBees)) {
     const speed = bee.activity === 'arriving' ? 0.12 : 0.06;
-    bee.drawX += (bee.targetX - bee.drawX) * speed;
-    bee.drawY += (bee.targetY - bee.drawY) * speed;
+
+    // Path following (inter-room) or direct lerp (intra-room)
+    if (bee.path && bee.pathIndex < bee.path.length) {
+      const wp = bee.path[bee.pathIndex];
+      bee.drawX += (wp.x - bee.drawX) * speed;
+      bee.drawY += (wp.y - bee.drawY) * speed;
+      const dx = wp.x - bee.drawX, dy = wp.y - bee.drawY;
+      if (dx * dx + dy * dy < 100) {
+        bee.pathIndex++;
+        if (bee.pathIndex >= bee.path.length) {
+          bee.path = null;
+          bee.pathIndex = 0;
+        }
+      }
+    } else {
+      bee.drawX += (bee.targetX - bee.drawX) * speed;
+      bee.drawY += (bee.targetY - bee.drawY) * speed;
+    }
     bee.gfx.x = bee.drawX;
     bee.gfx.y = bee.drawY;
 
@@ -1190,6 +1803,282 @@ function updateAllBees() {
 
   // Z-sort bees by Y position (lower Y = further back)
   layers.bees.children.sort((a, b) => a.y - b.y);
+}
+
+// --- Visual Effects ---
+let particles = [];
+let steamLines = [];
+let monitorGlows = [];
+let roomGlows = {};
+
+function initVisualEffects() {
+  // Pollen particles — tiny amber dots that float in rooms with active bees
+  for (let i = 0; i < 30; i++) {
+    const p = new Graphics();
+    const size = 1.5 + Math.random() * 2;
+    p.circle(0, 0, size).fill({ color: P.honey, alpha: 0.15 + Math.random() * 0.2 });
+    p.x = Math.random() * CANVAS_W;
+    p.y = Math.random() * CANVAS_H;
+    layers.effects.addChild(p);
+    particles.push({
+      gfx: p,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -0.1 - Math.random() * 0.2,
+      baseAlpha: 0.15 + Math.random() * 0.2,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  // Coffee steam — wavy lines rising from espresso machine (x:385, y:480)
+  for (let i = 0; i < 3; i++) {
+    const s = new Graphics();
+    layers.effects.addChild(s);
+    steamLines.push({
+      gfx: s,
+      x: 375 + i * 10,
+      baseY: 475,
+      phase: i * 2,
+      amp: 4 + i * 2,
+    });
+  }
+
+  // Monitor glow — subtle blue light behind desk monitors
+  const deskMonitors = [
+    { x: 360, y: 95 }, { x: 530, y: 95 }, { x: 700, y: 95 },
+    { x: 360, y: 225 }, { x: 530, y: 225 }, { x: 700, y: 225 },
+  ];
+  for (const m of deskMonitors) {
+    const glow = new Graphics();
+    glow.circle(m.x, m.y, 24).fill({ color: P.monGlow, alpha: 0.04 });
+    glow.circle(m.x, m.y, 12).fill({ color: P.monGlow, alpha: 0.06 });
+    layers.effects.addChild(glow);
+    monitorGlows.push({ gfx: glow, x: m.x, y: m.y, active: false });
+  }
+
+  // Room ambient glow overlay (brightens active rooms)
+  for (const room of ROOMS) {
+    const glow = new Graphics();
+    glow.roundRect(room.x, room.y, room.w, room.h, 6).fill({ color: 0xFFFBEB, alpha: 0 });
+    layers.effects.addChild(glow);
+    roomGlows[room.id] = { gfx: glow, targetAlpha: 0, currentAlpha: 0 };
+  }
+}
+
+function updateVisualEffects() {
+  // Determine active rooms (rooms with bees)
+  const activeRooms = new Set();
+  for (const bee of Object.values(localBees)) {
+    if (bee.room && bee.activity !== 'idle') activeRooms.add(bee.room);
+  }
+
+  // Pollen particles — drift upward, respawn at bottom
+  for (const p of particles) {
+    p.gfx.x += p.vx + Math.sin(frame * 0.02 + p.phase) * 0.15;
+    p.gfx.y += p.vy;
+    p.gfx.alpha = p.baseAlpha * (0.6 + Math.sin(frame * 0.03 + p.phase) * 0.4);
+
+    // Only show in active rooms
+    let inActive = false;
+    for (const room of ROOMS) {
+      if (activeRooms.has(room.id) &&
+          p.gfx.x >= room.x && p.gfx.x <= room.x + room.w &&
+          p.gfx.y >= room.y && p.gfx.y <= room.y + room.h) {
+        inActive = true;
+        break;
+      }
+    }
+    p.gfx.visible = inActive;
+
+    // Respawn
+    if (p.gfx.y < -10 || p.gfx.x < -10 || p.gfx.x > CANVAS_W + 10) {
+      p.gfx.x = Math.random() * CANVAS_W;
+      p.gfx.y = CANVAS_H + Math.random() * 20;
+    }
+  }
+
+  // Coffee steam
+  for (const s of steamLines) {
+    s.gfx.clear();
+    const t = frame * 0.04 + s.phase;
+    for (let i = 0; i < 20; i++) {
+      const y = s.baseY - i * 2.5;
+      const x = s.x + Math.sin(t + i * 0.3) * s.amp;
+      const alpha = 0.12 * (1 - i / 20);
+      s.gfx.circle(x, y, 1.5).fill({ color: 0xffffff, alpha });
+    }
+  }
+
+  // Monitor glow pulse
+  for (const m of monitorGlows) {
+    const room = ROOMS.find(r => r.id === 'desk');
+    m.active = room && activeRooms.has('desk');
+    m.gfx.alpha = m.active ? 0.6 + Math.sin(frame * 0.03) * 0.2 : 0.2;
+  }
+
+  // Room ambient lighting
+  for (const room of ROOMS) {
+    const rg = roomGlows[room.id];
+    if (!rg) continue;
+    rg.targetAlpha = activeRooms.has(room.id) ? 0.06 : 0;
+    rg.currentAlpha += (rg.targetAlpha - rg.currentAlpha) * 0.05;
+    rg.gfx.alpha = rg.currentAlpha;
+  }
+}
+
+// --- Building View ---
+function updateBuildingTransition() {
+  // Smooth lerp toward target
+  buildingTransition += (buildingTransitionTarget - buildingTransition) * 0.08;
+  if (Math.abs(buildingTransition - buildingTransitionTarget) < 0.01) {
+    buildingTransition = buildingTransitionTarget;
+  }
+
+  // Apply scale to office root
+  if (buildingTransition > 0.01) {
+    // In building mode: shrink the main office and show overlay
+    const scale = 1 - buildingTransition * 0.55; // 1.0 → 0.45
+    layers.officeRoot.scale.set(scale);
+    layers.officeRoot.alpha = 1 - buildingTransition * 0.7;
+    layers.buildingOverlay.visible = true;
+    renderBuildingOverlay();
+  } else {
+    layers.officeRoot.scale.set(1);
+    layers.officeRoot.alpha = 1;
+    layers.buildingOverlay.visible = false;
+  }
+}
+
+function renderBuildingOverlay() {
+  layers.buildingOverlay.removeChildren();
+
+  if (buildingProjects.length === 0) return;
+
+  const cols = buildingProjects.length <= 2 ? 2 : buildingProjects.length <= 4 ? 2 : 3;
+  const rows = Math.ceil(buildingProjects.length / cols);
+  const padding = 24;
+  const officeW = (CANVAS_W - padding * (cols + 1)) / cols;
+  const officeH = (CANVAS_H - padding * (rows + 1) - 40) / rows; // 40 for header space
+  const scaleX = officeW / CANVAS_W;
+  const scaleY = officeH / CANVAS_H;
+  const officeScale = Math.min(scaleX, scaleY);
+
+  buildingClickAreas = [];
+
+  // Title
+  const title = new Text({
+    text: 'BeeHaven Building',
+    style: new TextStyle({
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 20,
+      fontWeight: '700',
+      fill: 0x2D2926,
+    }),
+  });
+  title.x = CANVAS_W / 2;
+  title.y = 12;
+  title.anchor.set(0.5, 0);
+  layers.buildingOverlay.addChild(title);
+
+  for (let i = 0; i < buildingProjects.length; i++) {
+    const proj = buildingProjects[i];
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const ox = padding + col * (officeW + padding);
+    const oy = 48 + row * (officeH + padding);
+
+    // Mini office background
+    const bg = new Graphics();
+    bg.roundRect(ox, oy, officeW, officeH, 8).fill({ color: 0xFAF5EF, alpha: 0.95 });
+    bg.roundRect(ox, oy, officeW, officeH, 8).stroke({ color: 0xD4D0CC, width: 1.5 });
+    layers.buildingOverlay.addChild(bg);
+
+    // Project name label
+    const label = new Text({
+      text: proj,
+      style: new TextStyle({
+        fontFamily: 'Inter, sans-serif',
+        fontSize: 13,
+        fontWeight: '600',
+        fill: 0x2D2926,
+      }),
+    });
+    label.x = ox + officeW / 2;
+    label.y = oy + 6;
+    label.anchor.set(0.5, 0);
+    layers.buildingOverlay.addChild(label);
+
+    // Mini room outlines
+    for (const room of ROOMS) {
+      const rx = ox + room.x * officeScale + 4;
+      const ry = oy + room.y * officeScale + 22;
+      const rw = room.w * officeScale;
+      const rh = room.h * officeScale;
+      const miniRoom = new Graphics();
+      miniRoom.roundRect(rx, ry, rw, rh, 3).fill({ color: room.color, alpha: 0.4 });
+      miniRoom.roundRect(rx, ry, rw, rh, 3).stroke({ color: P.glassBrd, width: 0.8, alpha: 0.4 });
+      layers.buildingOverlay.addChild(miniRoom);
+    }
+
+    // Count bees in this project
+    const beeCount = Object.values(localBees).filter(b => b.project === proj).length;
+    const ambientCount = Object.values(ambientBees).length; // ambient are always visible
+
+    // Bee count badge
+    if (beeCount > 0) {
+      const badge = new Graphics();
+      badge.circle(ox + officeW - 16, oy + 14, 10).fill(P.honey);
+      layers.buildingOverlay.addChild(badge);
+
+      const countText = new Text({
+        text: String(beeCount),
+        style: new TextStyle({
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 10,
+          fontWeight: '700',
+          fill: 0x2D2926,
+        }),
+      });
+      countText.anchor.set(0.5, 0.5);
+      countText.x = ox + officeW - 16;
+      countText.y = oy + 14;
+      layers.buildingOverlay.addChild(countText);
+    }
+
+    // Mini bee dots for active bees
+    const projBees = Object.values(localBees).filter(b => b.project === proj);
+    for (const bee of projBees) {
+      const bx = ox + (bee.drawX / CANVAS_W) * officeW + 4;
+      const by = oy + (bee.drawY / CANVAS_H) * officeH + 22;
+      const dot = new Graphics();
+      dot.circle(bx, by, 4).fill(hexToNum(bee.color));
+      dot.circle(bx, by, 4).stroke({ color: 0xffffff, width: 1 });
+      layers.buildingOverlay.addChild(dot);
+    }
+
+    // Store click area for interaction
+    buildingClickAreas.push({ project: proj, x: ox, y: oy, w: officeW, h: officeH });
+  }
+}
+
+function enterBuildingView(projects) {
+  if (projects.length <= 1) return;
+  buildingProjects = projects;
+  viewMode = 'building';
+  buildingTransitionTarget = 1;
+}
+
+function exitBuildingView(selectedProject) {
+  viewMode = 'single';
+  buildingTransitionTarget = 0;
+  if (selectedProject) {
+    projectFilter = selectedProject;
+    const select = document.getElementById('project-filter');
+    if (select) select.value = selectedProject;
+    const deleteBtn = document.getElementById('btn-delete-project');
+    if (deleteBtn) deleteBtn.style.display = '';
+    lastTerminalKey = '';
+    lastEventLogKey = '';
+  }
 }
 
 // --- WebSocket ---
@@ -1242,6 +2131,7 @@ function handleState(state) {
   // Honey counter
   if (state.shop) {
     setText('stat-honey', state.shop.honey);
+    setText('shop-honey-badge', state.shop.honey);
     // Floating "+N" animation when honey increases
     if (state.shop.honey > lastHoney && lastHoney > 0) {
       showHoneyEarned(state.shop.honey - lastHoney);
@@ -1420,6 +2310,24 @@ function renderEventLog(entries) {
 const MAX_TERMINAL_ENTRIES = 100;
 let lastTerminalKey = '';
 
+/** Format relative time (e.g., "just now", "2m ago", "1h ago") */
+function relativeTime(timestamp) {
+  const diff = Date.now() - new Date(timestamp).getTime();
+  if (diff < 10000) return 'just now';
+  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+/** Determine role from terminal entry event */
+function entryRole(entry) {
+  if (entry.event === 'UserPromptSubmit') return 'user';
+  if (entry.event === 'Stop') return 'claude';
+  if (entry.event === 'Error' || entry.event === 'PostToolUseFailure') return 'error';
+  return 'tool';
+}
+
 /** Render terminal from state.terminalLog (persists across reconnects) */
 function renderTerminalFromState(entries) {
   if (!entries) return;
@@ -1433,26 +2341,59 @@ function renderTerminalFromState(entries) {
 
   terminal.innerHTML = '';
 
+  let lastDateStr = '';
+
   for (const entry of entries) {
+    // Date separator
+    const dateStr = new Date(entry.timestamp).toLocaleDateString();
+    if (dateStr !== lastDateStr) {
+      lastDateStr = dateStr;
+      const sep = document.createElement('div');
+      sep.className = 'term-session-sep';
+      sep.textContent = dateStr;
+      terminal.appendChild(sep);
+    }
+
+    const role = entryRole(entry);
     const el = document.createElement('div');
-    el.className = 'term-entry';
+    el.className = `term-entry role-${role}`;
 
-    const isUser = entry.event === 'UserPromptSubmit';
-    const badge = isUser ? 'user' : 'stop';
-    const label = isUser ? 'GOD' : 'LLM';
+    const roleConfig = {
+      user:   { icon: '>', badge: 'user', label: 'YOU' },
+      claude: { icon: '\uD83D\uDC1D', badge: 'stop', label: 'BEE' },
+      tool:   { icon: '\u2699', badge: 'tool', label: 'TOOL' },
+      error:  { icon: '\u26A0', badge: 'error', label: 'ERR' },
+    };
+    const rc = roleConfig[role] || roleConfig.tool;
 
-    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const relTime = relativeTime(entry.timestamp);
 
     let content = entry.content || '';
     if (content.length > 5000) content = content.slice(0, 5000) + '\n...';
 
+    // Count lines for collapsible detection
+    const lineCount = content.split('\n').length;
+    const isLong = lineCount > 5 || content.length > 400;
+
     el.innerHTML = `
       <div class="term-prompt">
-        <span class="term-badge ${badge}">${escapeHtml(label)}</span>
-        <span class="term-meta">${time}</span>
+        <span class="term-role-icon">${rc.icon}</span>
+        <span class="term-badge ${rc.badge}">${escapeHtml(rc.label)}</span>
+        <span class="term-relative-time">${relTime}</span>
       </div>
-      <div class="term-content">${escapeHtml(content)}</div>
+      <div class="term-content${isLong ? ' collapsed' : ''}">${escapeHtml(content)}</div>
+      ${isLong ? '<span class="term-collapse-toggle">Show more</span>' : ''}
     `;
+
+    // Bind collapse toggle
+    if (isLong) {
+      const toggle = el.querySelector('.term-collapse-toggle');
+      const contentEl = el.querySelector('.term-content');
+      toggle.addEventListener('click', () => {
+        const collapsed = contentEl.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? 'Show more' : 'Show less';
+      });
+    }
 
     terminal.appendChild(el);
   }
@@ -1460,12 +2401,18 @@ function renderTerminalFromState(entries) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+// Update relative timestamps every 30s
+setInterval(() => {
+  const times = document.querySelectorAll('.term-relative-time');
+  // Re-render would be heavy; we just rely on the next state broadcast to update fingerprint
+}, 30000);
+
 /** Handle real-time response messages (also flashes terminal tab) */
 function handleResponse(payload) {
   if (payload.event !== 'UserPromptSubmit' && payload.event !== 'Stop') return;
 
   // Flash the terminal tab if not active
-  const termTab = document.querySelector('.sidebar-tab[data-tab="terminal"]');
+  const termTab = document.querySelector('.term-window-tab[data-tab="terminal"]');
   if (termTab && !termTab.classList.contains('active')) {
     termTab.style.color = '#FCD34D';
     setTimeout(() => { if (!termTab.classList.contains('active')) termTab.style.color = ''; }, 2000);
@@ -1488,19 +2435,214 @@ function handleResponse(payload) {
   lastTerminalKey = '';
 }
 
-function initSidebarTabs() {
-  const tabs = document.querySelectorAll('.sidebar-tab');
+// --- Floating Terminal Window ---
+const TERM_STORAGE_KEY = 'beehaven-term-window';
+
+function loadTermWindowState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TERM_STORAGE_KEY));
+    if (saved) Object.assign(termWindow, saved);
+  } catch {}
+}
+
+function saveTermWindowState() {
+  localStorage.setItem(TERM_STORAGE_KEY, JSON.stringify({
+    x: termWindow.x, y: termWindow.y,
+    width: termWindow.width, height: termWindow.height,
+    minimized: termWindow.minimized, visible: termWindow.visible,
+  }));
+}
+
+function applyTermWindowPosition() {
+  const win = document.getElementById('terminal-window');
+  if (!win) return;
+  win.style.left = termWindow.x + 'px';
+  win.style.top = termWindow.y + 'px';
+  win.style.width = termWindow.width + 'px';
+  win.style.height = termWindow.height + 'px';
+}
+
+function toggleMaximize() {
+  if (termWindow.maximized) {
+    if (termPreMaximize) Object.assign(termWindow, termPreMaximize);
+    termWindow.maximized = false;
+  } else {
+    termPreMaximize = { x: termWindow.x, y: termWindow.y, width: termWindow.width, height: termWindow.height };
+    termWindow.x = 0;
+    termWindow.y = 52;
+    termWindow.width = window.innerWidth;
+    termWindow.height = window.innerHeight - 52;
+    termWindow.maximized = true;
+  }
+  applyTermWindowPosition();
+  saveTermWindowState();
+}
+
+function onTermDragStart(e) {
+  if (e.target.closest('.term-window-btn')) return;
+  termDragging = true;
+  const win = document.getElementById('terminal-window');
+  termDragOffset.x = e.clientX - win.offsetLeft;
+  termDragOffset.y = e.clientY - win.offsetTop;
+  e.preventDefault();
+}
+
+function onTermResizeStart(e, dir) {
+  termResizing = true;
+  termResizeDir = dir;
+  termDragOffset.x = e.clientX;
+  termDragOffset.y = e.clientY;
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onTermDragResizeMove(e) {
+  const win = document.getElementById('terminal-window');
+  if (!win) return;
+
+  if (termDragging) {
+    let nx = e.clientX - termDragOffset.x;
+    let ny = e.clientY - termDragOffset.y;
+    const snap = 12;
+    const maxX = window.innerWidth - win.offsetWidth;
+    const minY = 52;
+    if (nx < snap) nx = 0;
+    if (ny < minY + snap) ny = minY;
+    if (nx > maxX - snap) nx = Math.max(0, maxX);
+    if (ny > window.innerHeight - 36) ny = window.innerHeight - 36;
+    termWindow.x = nx;
+    termWindow.y = ny;
+    win.style.left = nx + 'px';
+    win.style.top = ny + 'px';
+    if (termWindow.maximized) { termWindow.maximized = false; }
+    return;
+  }
+
+  if (termResizing) {
+    const dx = e.clientX - termDragOffset.x;
+    const dy = e.clientY - termDragOffset.y;
+    termDragOffset.x = e.clientX;
+    termDragOffset.y = e.clientY;
+    const minW = 320, minH = 200;
+
+    if (termResizeDir.includes('e')) termWindow.width = Math.max(minW, termWindow.width + dx);
+    if (termResizeDir.includes('w')) {
+      const nw = Math.max(minW, termWindow.width - dx);
+      if (nw !== termWindow.width) { termWindow.x += termWindow.width - nw; termWindow.width = nw; }
+    }
+    if (termResizeDir.includes('s')) termWindow.height = Math.max(minH, termWindow.height + dy);
+    if (termResizeDir.includes('n')) {
+      const nh = Math.max(minH, termWindow.height - dy);
+      if (nh !== termWindow.height) { termWindow.y += termWindow.height - nh; termWindow.height = nh; }
+    }
+    applyTermWindowPosition();
+    if (termWindow.maximized) { termWindow.maximized = false; }
+  }
+}
+
+function onTermDragResizeEnd() {
+  if (termDragging || termResizing) {
+    termDragging = false;
+    termResizing = false;
+    saveTermWindowState();
+  }
+}
+
+function initTerminalWindow() {
+  loadTermWindowState();
+  const win = document.getElementById('terminal-window');
+  if (!win) return;
+
+  // Default Y: bottom of viewport
+  if (termWindow.y === null) {
+    termWindow.y = window.innerHeight - termWindow.height - 16;
+  }
+  applyTermWindowPosition();
+
+  // Tabs
+  const tabs = win.querySelectorAll('.term-window-tab');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       tab.style.color = '';
-      document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
-      const target = tab.getAttribute('data-tab');
-      const panel = document.getElementById(`${target}-panel`);
+      win.querySelectorAll('.term-window-panel').forEach(p => p.classList.remove('active'));
+      const panel = document.getElementById(`${tab.getAttribute('data-tab')}-panel`);
       if (panel) panel.classList.add('active');
     });
   });
+
+  // Title bar drag
+  const titlebar = win.querySelector('.term-window-titlebar');
+  titlebar.addEventListener('mousedown', onTermDragStart);
+  titlebar.addEventListener('dblclick', toggleMaximize);
+
+  // Touch drag
+  titlebar.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.term-window-btn')) return;
+    termDragging = true;
+    termDragOffset.x = e.touches[0].clientX - win.offsetLeft;
+    termDragOffset.y = e.touches[0].clientY - win.offsetTop;
+  }, { passive: true });
+
+  // Window controls
+  win.querySelector('.term-window-close').addEventListener('click', () => {
+    termWindow.visible = false;
+    win.classList.add('hidden');
+    document.getElementById('btn-terminal')?.classList.remove('active');
+    saveTermWindowState();
+  });
+  win.querySelector('.term-window-minimize').addEventListener('click', () => {
+    termWindow.minimized = !termWindow.minimized;
+    win.classList.toggle('minimized', termWindow.minimized);
+    saveTermWindowState();
+  });
+  win.querySelector('.term-window-maximize').addEventListener('click', toggleMaximize);
+
+  // Resize handles
+  win.querySelectorAll('.term-resize').forEach(handle => {
+    const cls = Array.from(handle.classList);
+    const dir = cls.find(c => c.startsWith('term-resize-') && c !== 'term-resize')?.replace('term-resize-', '');
+    if (dir) {
+      handle.addEventListener('mousedown', (e) => onTermResizeStart(e, dir));
+      handle.addEventListener('touchstart', (e) => {
+        termResizing = true;
+        termResizeDir = dir;
+        termDragOffset.x = e.touches[0].clientX;
+        termDragOffset.y = e.touches[0].clientY;
+        e.stopPropagation();
+      }, { passive: true });
+    }
+  });
+
+  // Global move/end
+  document.addEventListener('mousemove', onTermDragResizeMove);
+  document.addEventListener('mouseup', onTermDragResizeEnd);
+  document.addEventListener('touchmove', (e) => {
+    if (!termDragging && !termResizing) return;
+    onTermDragResizeMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, preventDefault() {} });
+  }, { passive: true });
+  document.addEventListener('touchend', onTermDragResizeEnd);
+
+  // Window resize clamp
+  window.addEventListener('resize', () => {
+    const maxX = window.innerWidth - termWindow.width;
+    const maxY = window.innerHeight - 36;
+    if (termWindow.x > maxX) termWindow.x = Math.max(0, maxX);
+    if (termWindow.y > maxY) termWindow.y = Math.max(52, maxY);
+    applyTermWindowPosition();
+  });
+
+  // Apply initial state
+  if (!termWindow.visible) win.classList.add('hidden');
+  if (termWindow.minimized) win.classList.add('minimized');
+}
+
+// --- Shop Popover ---
+function toggleShop() {
+  shopOpen = !shopOpen;
+  document.getElementById('shop-popover')?.classList.toggle('hidden', !shopOpen);
+  document.getElementById('btn-shop')?.classList.toggle('active', shopOpen);
 }
 
 // --- Chat ---
@@ -1653,18 +2795,37 @@ function stopRecording() {
 
 // --- UI Binding ---
 function bindUI() {
-  // Sidebar toggle (mobile)
-  const sidebar = document.getElementById('sidebar');
-  const backdrop = document.getElementById('sidebar-backdrop');
-  document.getElementById('btn-sidebar').addEventListener('click', () => {
-    const open = sidebar.classList.toggle('sidebar-open');
-    backdrop.classList.toggle('active', open);
-  });
-  backdrop.addEventListener('click', () => {
-    sidebar.classList.remove('sidebar-open');
-    backdrop.classList.remove('active');
+  // Floating terminal window
+  initTerminalWindow();
+
+  // Terminal toggle button
+  document.getElementById('btn-terminal').addEventListener('click', () => {
+    const win = document.getElementById('terminal-window');
+    termWindow.visible = !termWindow.visible;
+    win.classList.toggle('hidden', !termWindow.visible);
+    if (termWindow.visible && termWindow.minimized) {
+      termWindow.minimized = false;
+      win.classList.remove('minimized');
+    }
+    document.getElementById('btn-terminal').classList.toggle('active', termWindow.visible);
+    saveTermWindowState();
   });
 
+  // Shop popover
+  document.getElementById('btn-shop').addEventListener('click', toggleShop);
+  document.getElementById('btn-shop-close').addEventListener('click', toggleShop);
+  document.addEventListener('click', (e) => {
+    if (!shopOpen) return;
+    const popover = document.getElementById('shop-popover');
+    const btn = document.getElementById('btn-shop');
+    if (!popover.contains(e.target) && !btn.contains(e.target)) {
+      shopOpen = false;
+      popover.classList.add('hidden');
+      btn.classList.remove('active');
+    }
+  });
+
+  // Chat
   document.getElementById('btn-chat').addEventListener('click', toggleChat);
   document.getElementById('btn-chat-close').addEventListener('click', toggleChat);
   document.getElementById('btn-chat-send').addEventListener('click', sendChat);
@@ -1672,17 +2833,15 @@ function bindUI() {
     if (e.key === 'Enter') sendChat();
   });
 
+  // Voice
   document.getElementById('btn-voice').addEventListener('click', () => {
     voiceEnabled = !voiceEnabled;
     document.getElementById('btn-voice').classList.toggle('active', voiceEnabled);
     if (voiceEnabled) {
-      // Unlock audio on user gesture so future WebSocket-driven playback works
       ensureAudioContext();
     } else {
-      // Stop playback and flush queue when voice is toggled off
       stopAllAudio();
     }
-    // Tell backend to start/stop generating TTS
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'voice-toggle', enabled: voiceEnabled }));
     }
@@ -1690,23 +2849,28 @@ function bindUI() {
 
   document.getElementById('btn-mic').addEventListener('click', toggleMic);
 
+  // Project filter
   const projectSelect = document.getElementById('project-filter');
   const deleteBtn = document.getElementById('btn-delete-project');
 
   projectSelect.addEventListener('change', (e) => {
     projectFilter = e.target.value || null;
-    // Show/hide delete button (only when a specific project is selected)
     deleteBtn.style.display = projectFilter ? '' : 'none';
-    // Force re-render of terminal and event log with new filter
     lastTerminalKey = '';
     lastEventLogKey = '';
+
+    // Toggle building view
+    if (!projectFilter && officeState?.projects?.length > 1) {
+      enterBuildingView(officeState.projects);
+    } else {
+      exitBuildingView(null); // just exit building view, keep current filter
+    }
   });
 
   deleteBtn.addEventListener('click', () => {
     if (!projectFilter) return;
-    const name = projectFilter;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'delete-project', project: name }));
+      ws.send(JSON.stringify({ type: 'delete-project', project: projectFilter }));
     }
     projectFilter = null;
     projectSelect.value = '';
@@ -1715,7 +2879,14 @@ function bindUI() {
     lastEventLogKey = '';
   });
 
-  initSidebarTabs();
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '`') {
+      e.preventDefault();
+      document.getElementById('btn-terminal').click();
+    }
+    if (e.key === 'Escape' && shopOpen) toggleShop();
+  });
 }
 
 // --- Helpers ---

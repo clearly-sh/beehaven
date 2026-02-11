@@ -43,11 +43,32 @@
       </div>
     </div>
     <div class="header-right">
-      <button id="btn-sidebar" class="icon-btn" title="Toggle sidebar">
+      <button id="btn-terminal" class="icon-btn active" title="Toggle terminal (Ctrl+`)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
         </svg>
       </button>
+      <button id="btn-shop" class="icon-btn shop-btn" title="Bee Shop">
+        <span style="font-size:16px">&#x1F36F;</span>
+        <span id="shop-honey-badge" class="shop-badge">0</span>
+      </button>
+      <div id="shop-popover" class="shop-popover hidden">
+        <div class="shop-popover-header">
+          <span class="shop-popover-title">Bee Shop</span>
+          <button id="btn-shop-close" class="icon-btn icon-btn-sm">&times;</button>
+        </div>
+        <div class="shop-popover-body">
+          <div class="shop-balance">
+            <span class="shop-balance-icon">&#x1F36F;</span>
+            <span id="shop-honey" class="shop-balance-val">0</span>
+            <span class="shop-balance-label">honey</span>
+          </div>
+          <div class="shop-section-label">Skins</div>
+          <div id="shop-skins" class="shop-grid"></div>
+          <div class="shop-section-label">Accessories</div>
+          <div id="shop-accessories" class="shop-grid"></div>
+        </div>
+      </div>
       <button id="btn-voice" class="icon-btn" title="Toggle voice narration">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M11 5L6 9H2v6h4l5 4V5z"/><path class="voice-waves" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
@@ -58,6 +79,11 @@
           <rect x="9" y="1" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
       </button>
+      <a href="/docs.html" class="icon-btn" title="Documentation" target="_blank" style="text-decoration:none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </a>
       <button id="btn-chat" class="icon-btn" title="Open chat">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -66,34 +92,75 @@
     </div>
   </header>
 
-  <main id="main">
-    <div id="office-viewport"></div>
-    <aside id="sidebar">
-      <div class="sidebar-tabs">
-        <button class="sidebar-tab active" data-tab="terminal">Terminal</button>
-        <button class="sidebar-tab" data-tab="activity">Activity</button>
-        <button class="sidebar-tab" data-tab="shop">Shop</button>
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <span class="login-bee">&#x1F41D;</span>
+        <h1 class="login-title">BeeHaven <span class="login-accent">Office</span></h1>
+        <p class="login-tagline">Enter your hive</p>
       </div>
-      <div id="terminal-panel" class="sidebar-panel active">
+      <div id="login-mode-label" class="login-mode-label">Enter PIN</div>
+      <div id="pin-dots" class="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+      <div id="pin-error" class="pin-error hidden">Wrong PIN — try again</div>
+      <div class="pin-pad">
+        <button class="pin-key" data-key="1">1</button>
+        <button class="pin-key" data-key="2">2</button>
+        <button class="pin-key" data-key="3">3</button>
+        <button class="pin-key" data-key="4">4</button>
+        <button class="pin-key" data-key="5">5</button>
+        <button class="pin-key" data-key="6">6</button>
+        <button class="pin-key" data-key="7">7</button>
+        <button class="pin-key" data-key="8">8</button>
+        <button class="pin-key" data-key="9">9</button>
+        <button class="pin-key pin-key-fn" data-key="back">&#x232B;</button>
+        <button class="pin-key" data-key="0">0</button>
+        <button class="pin-key pin-key-fn pin-key-enter" data-key="enter">&#x2713;</button>
+      </div>
+      <button id="login-skip" class="login-skip">Skip login</button>
+    </div>
+  </div>
+
+  <main id="main" class="main-hidden">
+    <div id="office-viewport"></div>
+  </main>
+
+  <div id="terminal-window" class="term-window">
+    <div class="term-window-titlebar">
+      <div class="term-window-controls">
+        <button class="term-window-btn term-window-close" title="Close">&times;</button>
+        <button class="term-window-btn term-window-minimize" title="Minimize">&#x2013;</button>
+        <button class="term-window-btn term-window-maximize" title="Maximize">&#x25A1;</button>
+      </div>
+      <span class="term-window-title">BeeHaven Terminal</span>
+      <div class="term-window-drag-spacer"></div>
+    </div>
+    <div class="term-window-tabs">
+      <button class="term-window-tab active" data-tab="terminal">Terminal</button>
+      <button class="term-window-tab" data-tab="activity">Activity</button>
+    </div>
+    <div class="term-window-body">
+      <div id="terminal-panel" class="term-window-panel active">
         <div id="terminal-output"></div>
       </div>
-      <div id="activity-panel" class="sidebar-panel">
+      <div id="activity-panel" class="term-window-panel">
         <div id="event-log"></div>
       </div>
-      <div id="shop-panel" class="sidebar-panel">
-        <div class="shop-balance">
-          <span class="shop-balance-icon">&#x1F36F;</span>
-          <span id="shop-honey" class="shop-balance-val">0</span>
-          <span class="shop-balance-label">honey</span>
-        </div>
-        <div class="shop-section-label">Skins</div>
-        <div id="shop-skins" class="shop-grid"></div>
-        <div class="shop-section-label">Accessories</div>
-        <div id="shop-accessories" class="shop-grid"></div>
-      </div>
-    </aside>
-    <div id="sidebar-backdrop"></div>
-  </main>
+    </div>
+    <div class="term-resize term-resize-n"></div>
+    <div class="term-resize term-resize-s"></div>
+    <div class="term-resize term-resize-e"></div>
+    <div class="term-resize term-resize-w"></div>
+    <div class="term-resize term-resize-ne"></div>
+    <div class="term-resize term-resize-nw"></div>
+    <div class="term-resize term-resize-se"></div>
+    <div class="term-resize term-resize-sw"></div>
+  </div>
 
   <div id="chat-panel" class="chat-panel hidden">
     <div class="chat-header">
