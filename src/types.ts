@@ -80,6 +80,7 @@ export interface BeeCharacter {
   color: string;
   message?: string;
   messageTimeout?: number;
+  project?: string;
 }
 
 /** Room definition with position coordinates */
@@ -103,6 +104,9 @@ export interface OfficeState {
   stats: OfficeStats;
   chat?: ChatSession;
   agentScripts?: AgentScript[];
+  projects?: string[];
+  terminalLog?: TerminalEntry[];
+  shop: ShopState;
 }
 
 /** Chat message in the recruiter conversation */
@@ -140,6 +144,14 @@ export interface EventLogEntry {
   event: string;
   detail: string;
   icon: string;
+  project?: string;
+}
+
+export interface TerminalEntry {
+  event: string;
+  content: string;
+  timestamp: string;
+  project?: string;
 }
 
 export interface OfficeStats {
@@ -151,9 +163,42 @@ export interface OfficeStats {
   sessionStartTime?: string;
 }
 
+// ============================================================================
+// Shop & Currency Types
+// ============================================================================
+
+/** A purchasable item in the shop */
+export interface ShopItem {
+  id: string;
+  name: string;
+  type: 'skin' | 'accessory';
+  price: number;
+  color?: string;
+  description?: string;
+}
+
+/** Full shop state broadcast to clients */
+export interface ShopState {
+  honey: number;
+  ownedSkins: string[];
+  ownedAccessories: string[];
+  equippedSkin: string;
+  equippedAccessory: string | null;
+  items: ShopItem[];
+}
+
+/** Persisted shop data (subset of ShopState, without catalog) */
+export interface ShopPersistData {
+  honey: number;
+  ownedSkins: string[];
+  ownedAccessories: string[];
+  equippedSkin: string;
+  equippedAccessory: string | null;
+}
+
 /** WebSocket message from server to client */
 export interface WSMessage {
-  type: 'state' | 'event' | 'speech' | 'transcript' | 'chat' | 'projects' | 'agent-status';
+  type: 'state' | 'event' | 'speech' | 'transcript' | 'chat' | 'projects' | 'agent-status' | 'shop-result';
   payload: unknown;
 }
 
@@ -186,6 +231,7 @@ export interface OnboardingConfig {
     displayName: string;
     photoURL?: string;
   };
+  shop?: ShopPersistData;
 }
 
 /** State of the entire building (returned from relay) */
