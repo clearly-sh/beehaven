@@ -30,14 +30,15 @@ import {
 
 /** Office room layout — WeWork single-team office (half-scale for PixiJS doubling) */
 export const ROOMS: RoomDef[] = [
-  { id: 'lobby',        label: 'Lobby',         x: 20,  y: 200, width: 100, height: 30,  color: '#FEF3C7' },
-  { id: 'desk',         label: 'Team Office',   x: 125, y: 20,  width: 300, height: 170, color: '#DBEAFE' },
-  { id: 'phone-a',      label: 'Phone Booth',   x: 20,  y: 20,  width: 40,  height: 50,  color: '#E0F2FE' },
-  { id: 'phone-b',      label: 'Phone Booth',   x: 530, y: 20,  width: 40,  height: 50,  color: '#E0F2FE' },
-  { id: 'server-room',  label: 'Server Closet', x: 500, y: 235, width: 60,  height: 80,  color: '#FEE2E2' },
-  { id: 'meeting-room', label: 'Meeting Room',  x: 20,  y: 235, width: 100, height: 100, color: '#D1FAE5' },
-  { id: 'water-cooler', label: 'Lounge',        x: 320, y: 235, width: 125, height: 100, color: '#E0F2FE' },
-  { id: 'coffee',       label: 'Kitchen',       x: 170, y: 235, width: 100, height: 100, color: '#FED7AA' },
+  { id: 'lobby',        label: 'Reception',   x: 20,  y: 200, width: 100, height: 30,  color: '#FEF3C7' },
+  { id: 'library',      label: 'Library',     x: 125, y: 20,  width: 140, height: 170, color: '#D1FAE5' },
+  { id: 'studio',       label: 'Studio',      x: 275, y: 20,  width: 150, height: 170, color: '#DBEAFE' },
+  { id: 'web-booth',    label: 'Web',         x: 20,  y: 20,  width: 40,  height: 50,  color: '#E0E0FE' },
+  { id: 'phone-b',      label: 'Focus',       x: 530, y: 20,  width: 40,  height: 50,  color: '#E0F2FE' },
+  { id: 'server-room',  label: 'Server Room', x: 500, y: 235, width: 60,  height: 80,  color: '#FEE2E2' },
+  { id: 'meeting-room', label: 'Conference',  x: 20,  y: 235, width: 100, height: 100, color: '#D1FAE5' },
+  { id: 'water-cooler', label: 'Lounge',      x: 320, y: 235, width: 125, height: 100, color: '#E0F2FE' },
+  { id: 'coffee',       label: 'Kitchen',     x: 170, y: 235, width: 100, height: 100, color: '#FED7AA' },
 ];
 
 /** Get center position of a room */
@@ -55,19 +56,20 @@ function toolToRoom(toolName: string): Room {
     case 'Edit':
     case 'Write':
     case 'NotebookEdit':
-      return 'desk';
+      return 'studio';
     case 'Read':
     case 'Glob':
     case 'Grep':
+      return 'library';
     case 'WebFetch':
     case 'WebSearch':
-      return 'desk';
+      return 'web-booth';
     case 'Bash':
       return 'server-room';
     case 'Task':
       return 'meeting-room';
     default:
-      return 'desk';
+      return 'studio';
   }
 }
 
@@ -88,7 +90,7 @@ function toolToActivity(toolName: string): BeeActivity {
       return 'thinking';
     case 'WebFetch':
     case 'WebSearch':
-      return 'searching';
+      return 'browsing';
     default:
       return 'coding';
   }
@@ -353,7 +355,7 @@ export class Office {
       case 'SubagentStart': {
         const agentId = event.agent_id || `worker-${this.state.bees.length}`;
         const agentType = event.agent_type || 'worker';
-        const room = agentType === 'Bash' ? 'server-room' : agentType === 'Explore' ? 'desk' : 'desk';
+        const room: Room = agentType === 'Bash' ? 'server-room' : agentType === 'Explore' ? 'library' : 'studio';
         const pos = roomCenter(room);
         const color = BEE_COLORS[this.state.bees.length % BEE_COLORS.length];
 

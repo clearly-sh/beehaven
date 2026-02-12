@@ -9,7 +9,7 @@ Standalone Node.js application that visualizes Claude Code activity as an animat
 - **1480x1040** logical canvas — scales to fill container
 - **Programmatic bee sprites** — PixiJS Graphics API draws bees with wings, expressions, accessories
 - **Layered rendering** — grid → rooms → furniture → doors → bees → elevator → UI (sorted draw order)
-- **A* waypoint pathfinding** — 11 nodes, 14 bidirectional edges for smooth bee movement between rooms
+- **A* waypoint pathfinding** — 30+ nodes with door thresholds, corridor waypoints, and hallway spine for smooth bee movement through doors between rooms
 - **COORD_SCALE = 2** — Backend room coords are half-scale, multiplied by 2 on client
 
 ## Commands
@@ -36,7 +36,7 @@ Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State �
 
 1. **Hooks** (`hooks/event-logger.sh`): Shell script receives JSON on stdin from Claude Code hook events, appends timestamped JSONL to `/tmp/beehaven-events.jsonl`
 2. **Watcher** (`src/watcher.ts`): Uses chokidar to poll the JSONL file every 100ms, parses new lines, emits `ClaudeEvent` objects
-3. **Office** (`src/office.ts`): State machine that maps events to bee positions/activities across 8 rooms. Auto-detects projects on startup from `~/.claude/projects/` and saved sessions
+3. **Office** (`src/office.ts`): State machine that maps events to bee positions/activities across 9 rooms (Library, Studio, Web Booth, Focus Booth, Conference, Kitchen, Lounge, Server Room, Lobby). Auto-detects projects on startup from `~/.claude/projects/` and saved sessions
 4. **Server** (`src/server.ts`): Express serves `public/` static files. WebSocketServer pushes state at 2Hz to all connected browsers
 5. **Voice** (`src/voice.ts`): Optional ElevenLabs integration. Strips code blocks from text, speaks conversational portions via TTS. STT available for voice input
 6. **Canvas** (`public/office.js`): PixiJS v8 WebGL renderer with A* pathfinding, animated bee characters, elevator, sliding doors, dynamic expressions, interaction point seating
@@ -47,7 +47,9 @@ Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State �
 |---|---|
 | `SessionStart` | Queen arrives in Lobby |
 | `UserPromptSubmit` | Queen moves to Conference Room, thinks |
-| `PreToolUse` (Read/Glob/Grep/Edit/Write/Web) | Queen moves to Team Office |
+| `PreToolUse` (Read/Glob/Grep) | Queen moves to Library (reading/research) |
+| `PreToolUse` (Edit/Write/NotebookEdit) | Queen moves to Studio (coding/creation) |
+| `PreToolUse` (WebFetch/WebSearch) | Queen moves to Web Booth (browsing) |
 | `PreToolUse` (Bash) | Queen moves to Server Room |
 | `PreToolUse` (Task) | Queen moves to Conference Room |
 | `PostToolUse` | Activity completed indicator |
@@ -62,12 +64,13 @@ Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State �
 
 | Room ID | Label | Position | Size | Purpose |
 |---|---|---|---|---|
-| `lobby` | Lobby | (20, 200) | 100x30 | Session start/end |
-| `desk` | Team Office | (125, 20) | 300x170 | All file operations (Read, Write, Edit, Glob, Grep, Web) |
-| `phone-a` | Phone Booth | (20, 20) | 40x50 | Ambient bee space |
-| `phone-b` | Phone Booth | (530, 20) | 40x50 | Ambient bee space |
-| `server-room` | Server Closet | (500, 235) | 60x80 | Bash commands |
-| `meeting-room` | Conference Room | (20, 235) | 100x100 | Thinking, Task, presenting |
+| `lobby` | Reception | (20, 200) | 100x30 | Session start/end |
+| `library` | Library | (125, 20) | 140x170 | Research: Read, Glob, Grep |
+| `studio` | Studio | (275, 20) | 150x170 | Creation: Edit, Write, NotebookEdit |
+| `web-booth` | Web | (20, 20) | 40x50 | Browsing: WebFetch, WebSearch |
+| `phone-b` | Focus | (530, 20) | 40x50 | Ambient focus booth |
+| `server-room` | Server Room | (500, 235) | 60x80 | Bash commands |
+| `meeting-room` | Conference | (20, 235) | 100x100 | Thinking, Task, presenting |
 | `water-cooler` | Lounge | (320, 235) | 125x100 | Idle state |
 | `coffee` | Kitchen | (170, 235) | 100x100 | Idle state |
 

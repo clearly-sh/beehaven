@@ -45,13 +45,14 @@ export interface ClaudeEvent {
 /** Rooms in the BeeHaven office — WeWork single-team layout */
 export type Room =
   | 'lobby'
-  | 'desk'
+  | 'library'
+  | 'studio'
+  | 'web-booth'
+  | 'phone-b'
   | 'server-room'
   | 'meeting-room'
   | 'water-cooler'
-  | 'coffee'
-  | 'phone-a'
-  | 'phone-b';
+  | 'coffee';
 
 /** Activity a bee character can be doing */
 export type BeeActivity =
@@ -66,6 +67,7 @@ export type BeeActivity =
   | 'chatting'
   | 'arriving'
   | 'searching'
+  | 'browsing'
   | 'celebrating';
 
 /** A bee character in the office */
