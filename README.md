@@ -1,65 +1,85 @@
 # BeeHaven Office
 
-Real-time Claude Code activity visualizer. Watch kawaii bees move between office rooms as Claude works on your code.
+Visualize Claude Code activity as an animated bee office. Watch your AI coding assistant come to life as bee characters navigate between rooms — coding at desks, running commands in the server room, and presenting results in the conference room.
 
 ## Quick Start
 
 ```bash
-# 1. Install & Build
-cd beehaven
-npm install
-npm run build
+npx @clearly/beehaven
+```
 
-# 2. Configure Claude Code Hooks
-npm run setup-hooks
-# Writes to .claude/settings.local.json so Claude Code
-# sends events to /tmp/beehaven-events.jsonl
+This starts the BeeHaven Office server and opens it in your browser at `http://localhost:3333`.
 
-# 3. Start the Office
-npm run dev
-# Opens at http://localhost:3333
+## Setup
 
-# 4. (Optional) Connect to Clearly Cloud
-npm run setup-relay
-# Follow prompts to enter your relay token
-# Get a token at clearly.sh/home > Settings > Generate Relay Token
+Configure Claude Code hooks so BeeHaven can observe activity:
 
-# 5. (Optional) Enable Voice
-ELEVENLABS_API_KEY=sk-... npm run dev
-# Bees narrate Claude Code activity via ElevenLabs TTS
+```bash
+# In your project directory:
+npx @clearly/beehaven setup
+```
+
+This writes hook configuration to `.claude/settings.local.json` in your current directory. Restart Claude Code for hooks to take effect.
+
+## Features
+
+### Free (no account needed)
+
+- Real-time animated office with PixiJS WebGL rendering
+- Bee characters that move between rooms based on Claude Code activity
+- Terminal panel showing Claude's responses
+- Activity log with tool calls, file reads/writes, commands
+- Multi-project support with building view
+- Honey currency earned from coding activity
+- Bee shop with skins and accessories
+- HiDPI Retina display support
+
+### With Clearly Account
+
+Link your [Clearly](https://clearly.sh) account to unlock:
+
+- Cloud relay — sync office state to the cloud
+- Shared team visualization — see teammates' offices
+- Synced bee skins across devices
+- Voice narration (ElevenLabs TTS)
+- Usage analytics
+
+```bash
+npx @clearly/beehaven login
+```
+
+## CLI Reference
+
+```
+beehaven [command] [options]
+
+Commands:
+  start          Start the office server (default)
+  setup          Configure Claude Code hooks for current project
+  login          Link your Clearly account
+  logout         Unlink your Clearly account
+
+Options:
+  --port <n>     Server port (default: 3333, env: BEEHAVEN_PORT)
+  --no-open      Don't auto-open browser
+  --verbose      Enable verbose logging
+  --help, -h     Show help
+  --version, -v  Show version
 ```
 
 ## How It Works
 
 ```
-Claude Code hooks --> /tmp/beehaven-events.jsonl --> Watcher --> Office State --> WebSocket --> Browser
-                                                                     |
-                                                               Relay (optional)
-                                                                     |
-                                                              Firebase/Firestore
-                                                                     |
-                                                            clearly.sh web office
+Claude Code hooks --> /tmp/beehaven-events.jsonl --> Watcher --> Office State --> WebSocket --> PixiJS Canvas
 ```
 
-1. **Hooks** capture every Claude Code event (tool calls, prompts, sessions) via `event-logger.sh`
-2. **Watcher** polls the JSONL file every 100ms and parses new events
-3. **Office state machine** maps events to bee room transitions:
-   - `Edit/Write` --> Team Office (coding)
-   - `Read/Grep/Glob` --> Team Office (reading)
-   - `Bash` --> Server Closet (terminal)
-   - `Task` (subagent) --> Meeting Room (delegation)
-   - `UserPromptSubmit` --> Meeting Room (thinking)
-   - `Stop` --> Meeting Room (presenting results)
-   - Idle 8s --> Kitchen or Lounge (break)
-4. **WebSocket** pushes state to the browser at 2Hz
-5. **PixiJS canvas** renders animated bees with wings, speech bubbles, and room transitions
-6. **Relay** (optional) syncs state to Firebase for the web office at clearly.sh
+1. **Hooks**: A shell script receives events from Claude Code and appends them to a JSONL file
+2. **Watcher**: Polls the JSONL file for new events using chokidar
+3. **Office**: State machine maps events to bee positions and activities across 8 rooms
+4. **Server**: Express + WebSocket pushes state updates at 2Hz to connected browsers
+5. **Canvas**: PixiJS v8 renders the animated office with A\* pathfinding, sliding doors, elevator, and dynamic bee expressions
 
-## Worker Bees
-
-When Claude Code launches subagents (`Task` tool), worker bees spawn and fly to the appropriate room. They celebrate when done and disappear after 3 seconds.
-
-## Claude Code Hook Events
+### Hook Events
 
 | Event | Bee Behavior |
 |---|---|
@@ -75,48 +95,17 @@ When Claude Code launches subagents (`Task` tool), worker bees spawn and fly to 
 | `SubagentStop` | Worker bee celebrates |
 | `SessionEnd` | Queen returns to lobby |
 
-## Office Layout (WeWork-style)
-
-```
-Phone Booth A -- Team Office (6 desks) -- Phone Booth B
-                      |
-              Main Corridor
-                      |
-Meeting Room -- Kitchen -- Lounge -- Server Closet
-```
-
 ## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `BEEHAVEN_PORT` | `3333` | Local server port |
-| `ELEVENLABS_API_KEY` | (none) | Enable voice narration |
+| Variable | Description |
+|---|---|
+| `BEEHAVEN_PORT` | Server port (default: 3333) |
+| `ELEVENLABS_API_KEY` | Enable voice narration via ElevenLabs TTS |
 
-## Commands
+## Contributing
 
-```bash
-npm run dev           # Start with hot-reload
-npm run build         # Compile TypeScript
-npm run start         # Run compiled JS
-npm run setup-hooks   # Configure Claude Code hooks
-npm run setup-relay   # Configure cloud relay
-```
+Contributions welcome! Please open an issue or PR on [GitHub](https://github.com/clearly-sh/beehaven).
 
-## Cloud Relay
+## License
 
-The relay syncs your local office state to Clearly's Firebase backend so your bees appear in the web office at clearly.sh.
-
-### Setup
-
-1. Sign in at clearly.sh
-2. Go to Settings > Generate Relay Token
-3. Run `npm run setup-relay` and paste the token
-4. Your bees now appear in the web office in real-time
-
-### Architecture
-
-- **Token auth**: 64-char hex token with 90-day TTL (auto-extended)
-- **Rate limits**: 30 req/min (free), 120 (pro), 300 (team)
-- **Batching**: Events debounced at 300ms, batches of up to 20
-- **Heartbeat**: Every 30 seconds, extends token TTL
-- **Backoff**: Exponential retry (1s to 60s) on failures
+MIT
