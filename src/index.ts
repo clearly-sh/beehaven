@@ -8,14 +8,11 @@ import { Office } from './office.js';
 import { Server } from './server.js';
 import { Voice } from './voice.js';
 import { Relay } from './relay.js';
-import { ChatHandler } from './chat.js';
 
 import { readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import type { OnboardingConfig, ShopPersistData } from './types.js';
-
-const PORT = parseInt(process.env.BEEHAVEN_PORT || '3333');
 
 const CONFIG_DIR = join(homedir(), '.beehaven');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -26,11 +23,15 @@ function loadConfig(): OnboardingConfig {
   catch { return { onboarded: false, tier: 'local' }; }
 }
 
-function saveShopToConfig(shop: ShopPersistData): void {
+function saveOnboardingConfig(update: Partial<OnboardingConfig>): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
   const existing = loadConfig();
-  existing.shop = shop;
-  writeFileSync(CONFIG_FILE, JSON.stringify(existing, null, 2));
+  const merged = { ...existing, ...update };
+  writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
+}
+
+function saveShopToConfig(shop: ShopPersistData): void {
+  saveOnboardingConfig({ shop });
 }
 
 // Track transcript reading position so we only send new text
@@ -41,7 +42,6 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
   try {
     if (transcriptPath !== lastTranscriptPath) {
       lastTranscriptPath = transcriptPath;
-      // Skip to end on first encounter — only process NEW content from here
       try {
         lastTranscriptSize = statSync(transcriptPath).size;
       } catch { lastTranscriptSize = 0; }
@@ -54,7 +54,6 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
 
     console.log(`[transcript] Reading ${stat.size - lastTranscriptSize} new bytes`);
 
-    // Read as Buffer and slice by byte offset to avoid unicode mismatch
     const buf = readFileSync(transcriptPath);
     const newContent = buf.slice(lastTranscriptSize).toString('utf8');
     lastTranscriptSize = stat.size;
@@ -77,7 +76,6 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
             if (text.length > 0) {
               const displayText = text.length > 5000 ? text.slice(0, 5000) + '\n...' : text;
               console.log(`[transcript] Text (${text.length} chars): ${text.slice(0, 80)}...`);
-              // Tag with current queen's project so filter works
               const queenProject = office.getState().bees[0]?.project;
               office.addTerminalEntry({
                 event: 'Stop',
@@ -87,7 +85,6 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
               });
               server.broadcastResponse({ event: 'Stop', content: displayText });
 
-              // TTS only when client has toggled voice on
               if (server.isVoiceRequested() && voice.isEnabled()) {
                 console.log(`[voice] Speaking ${text.length} chars...`);
                 try {
@@ -112,10 +109,18 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
   }
 }
 
-async function main() {
+export interface StartOptions {
+  port?: number;
+  openBrowser?: boolean;
+  verbose?: boolean;
+}
+
+export async function main(opts: StartOptions = {}) {
+  const port = opts.port || parseInt(process.env.BEEHAVEN_PORT || '3333');
+
   console.log('');
-  console.log('  🐝 BeeHaven Office');
-  console.log('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  \uD83D\uDC1D BeeHaven Office');
+  console.log('  \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501');
   console.log('  Visualize Claude Code as a busy bee office');
   console.log('');
 
@@ -123,26 +128,26 @@ async function main() {
   const config = loadConfig();
   const watcher = new ClaudeWatcher();
   const office = new Office(config.shop);
-  const server = new Server(PORT);
+  const server = new Server(port);
   const relay = new Relay();
   const voice = new Voice({
     enabled: !!process.env.ELEVENLABS_API_KEY,
   });
 
-  // Give server access to voice for STT transcription and relay for building API
+  // Wire up server dependencies
   server.setVoice(voice);
   server.setRelay(relay);
   server.setOffice(office);
 
-  // Initialize recruiter chat handler (connects to processInput via Firebase)
-  const chatHandler = new ChatHandler();
-  server.setChatHandler(chatHandler);
+  // When relay heartbeat returns profile, save to config
+  relay.onProfileUpdate = (profile) => {
+    saveOnboardingConfig({ user: profile });
+  };
 
   // Wire up: events → office state → broadcast + relay
   watcher.on('event', async (event) => {
     const { speechText } = office.processEvent(event);
 
-    // Add user input to persistent terminal log before broadcasting state
     if (event.hook_event_name === 'UserPromptSubmit' && event.prompt) {
       const proj = event.cwd
         ? event.cwd.replace(/\/+$/, '').split('/').filter(Boolean).pop() || undefined
@@ -155,42 +160,31 @@ async function main() {
       });
     }
 
-    // Broadcast updated state to all local UI clients
     server.broadcastState(office.getState());
     server.broadcastEvent(event.hook_event_name, event.tool_name || '');
 
-    // Also send real-time response for tab flash notification
     if (event.hook_event_name === 'UserPromptSubmit' && event.prompt) {
-      server.broadcastResponse({
-        event: 'UserPromptSubmit',
-        content: event.prompt,
-      });
+      server.broadcastResponse({ event: 'UserPromptSubmit', content: event.prompt });
     }
 
-    // On every event, check the transcript for new assistant text + TTS
     const transcriptPath = (event as any).transcript_path as string | undefined;
     if (transcriptPath) {
       await flushNewTranscriptText(transcriptPath, server, voice, office);
     }
 
-    // On Stop events, do a single delayed re-read — the transcript may not be
-    // fully flushed when the hook fires, so the final response gets missed.
     if (event.hook_event_name === 'Stop' && lastTranscriptPath) {
       setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 1000);
     }
 
-    // Mark session start
     if (event.hook_event_name === 'SessionStart') {
       office.markSessionStart();
     }
 
-    // Persist shop + save session on session end
     if (event.hook_event_name === 'SessionEnd') {
       saveShopToConfig(office.shopPersistData());
       office.saveSession();
     }
 
-    // Sync to Clearly cloud (debounced)
     relay.syncState(office.getState());
     relay.sendEvent(event);
   });
@@ -210,15 +204,31 @@ async function main() {
   watcher.start();
   await relay.start();
 
+  const url = `http://localhost:${port}`;
   console.log('');
-  console.log(`  Open http://localhost:${PORT} to see the office`);
+  console.log(`  Open ${url} to see the office`);
   console.log('  Voice: ' + (voice.isEnabled() ? 'ON (ElevenLabs)' : 'OFF (set ELEVENLABS_API_KEY)'));
-  console.log('  Chat:  ' + (chatHandler.isEnabled() ? 'ON (Recruiter Bee)' : 'OFF (no service account)'));
-  console.log('  Relay: ' + (relay.isConfigured() ? 'ON (syncing to Clearly)' : 'OFF (run: npm run setup-relay)'));
+
+  const profile = relay.getProfile();
+  if (relay.isConfigured() && profile) {
+    console.log(`  Clearly: ${profile.displayName} (${profile.subscriptionPlan})`);
+  } else if (relay.isConfigured()) {
+    console.log('  Clearly: Linked (connecting...)');
+  } else {
+    console.log('  Clearly: Not linked (run: beehaven login)');
+  }
   console.log('');
   console.log('  Waiting for Claude Code events...');
-  console.log('  (Make sure hooks are configured - run: npm run setup-hooks)');
+  console.log('  (Make sure hooks are configured — run: beehaven setup)');
   console.log('');
-}
 
-main().catch(console.error);
+  // Auto-open browser
+  if (opts.openBrowser !== false) {
+    try {
+      const openModule = await import('open');
+      await openModule.default(url);
+    } catch {
+      // open package not available or failed — not critical
+    }
+  }
+}

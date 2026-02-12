@@ -79,16 +79,26 @@
           <rect x="9" y="1" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
       </button>
+      <button id="btn-account" class="icon-btn account-btn" title="Clearly Account">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span id="account-badge" class="account-badge hidden"></span>
+      </button>
+      <div id="account-popover" class="account-popover hidden">
+        <div class="account-popover-header">
+          <span class="account-popover-title">Clearly Account</span>
+          <button id="btn-account-close" class="icon-btn icon-btn-sm">&times;</button>
+        </div>
+        <div id="account-popover-body" class="account-popover-body">
+          <!-- Dynamically rendered: unlinked (token input) or linked (profile) -->
+        </div>
+      </div>
       <a href="/docs.html" class="icon-btn" title="Documentation" target="_blank" style="text-decoration:none">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
       </a>
-      <button id="btn-chat" class="icon-btn" title="Open chat">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-      </button>
     </div>
   </header>
 
@@ -160,26 +170,6 @@
     <div class="term-resize term-resize-nw"></div>
     <div class="term-resize term-resize-se"></div>
     <div class="term-resize term-resize-sw"></div>
-  </div>
-
-  <div id="chat-panel" class="chat-panel hidden">
-    <div class="chat-header">
-      <div class="chat-header-left">
-        <span class="chat-avatar">&#x1F41D;</span>
-        <span class="chat-title">Recruiter Bee</span>
-      </div>
-      <div class="chat-header-right">
-        <select id="chat-project" class="chat-project-picker">
-          <option value="">No project</option>
-        </select>
-        <button id="btn-chat-close" class="icon-btn icon-btn-sm">&times;</button>
-      </div>
-    </div>
-    <div id="chat-messages" class="chat-messages"></div>
-    <div class="chat-input-bar">
-      <input id="chat-input" type="text" placeholder="Talk to the Recruiter Bee..." autocomplete="off">
-      <button id="btn-chat-send" class="chat-send-btn">Send</button>
-    </div>
   </div>
 
   <div id="speech-bar" class="speech-bar hidden">

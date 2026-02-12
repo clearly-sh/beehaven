@@ -1,5 +1,5 @@
 // ============================================================================
-// BeeHaven Office — PixiJS v8 Renderer + WebSocket + Chat + Audio
+// BeeHaven Office — PixiJS v8 Renderer + WebSocket + Audio
 // ============================================================================
 
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
@@ -68,7 +68,6 @@ let voiceEnabled = false;
 let audioQueue = [];
 let isPlaying = false;
 let currentAudioSource = null; // Reference to playing AudioBufferSourceNode for stop
-let chatOpen = false;
 let recording = false;
 let mediaRecorder = null;
 let projectFilter = null;  // null = show all, string = filter to that project
@@ -91,6 +90,8 @@ let termDragging = false, termResizing = false, termResizeDir = '';
 let termDragOffset = { x: 0, y: 0 };
 let termPreMaximize = null;
 let shopOpen = false;
+let accountOpen = false;
+let accountState = { linked: false, profile: null, tier: 'local', connected: false };
 
 // --- Elevator Constants ---
 const ELEV = {
@@ -2394,7 +2395,6 @@ function connectWS() {
         case 'state':    handleState(msg.payload);    break;
         case 'event':    handleEvent(msg.payload);    break;
         case 'speech':   handleSpeech(msg.payload);   break;
-        case 'chat':     handleChat(msg.payload);     break;
         case 'response': handleResponse(msg.payload); break;
         case 'shop-result': handleShopResult(msg.payload); break;
       }
@@ -2494,16 +2494,6 @@ function handleSpeech(payload) {
   console.log(`[speech] Queued audio (${bytes.length} bytes), queue length: ${audioQueue.length + 1}`);
   audioQueue.push({ buffer: bytes.buffer, text: payload.text });
   if (!isPlaying) playNextAudio();
-}
-
-function handleChat(payload) {
-  if (payload.status === 'complete' && payload.response) {
-    // Remove thinking indicator
-    const thinking = document.querySelector('.chat-msg.thinking');
-    if (thinking) thinking.remove();
-
-    appendChatMessage('assistant', payload.response);
-  }
 }
 
 // --- Audio ---
@@ -3063,81 +3053,152 @@ function toggleShop() {
   document.getElementById('btn-shop')?.classList.toggle('active', shopOpen);
 }
 
-// --- Chat ---
-function toggleChat() {
-  chatOpen = !chatOpen;
-  document.getElementById('chat-panel').classList.toggle('hidden', !chatOpen);
-  document.getElementById('btn-chat').classList.toggle('active', chatOpen);
-  if (chatOpen) {
-    document.getElementById('chat-input').focus();
-    loadProjects();
-  }
+// --- Account Linking ---
+function toggleAccount() {
+  accountOpen = !accountOpen;
+  document.getElementById('account-popover')?.classList.toggle('hidden', !accountOpen);
+  document.getElementById('btn-account')?.classList.toggle('active', accountOpen);
+  if (accountOpen) fetchAccountState();
 }
 
-async function sendChat() {
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-
-  appendChatMessage('user', text);
-  appendChatMessage('assistant', 'Thinking...', true);
-
+async function fetchAccountState() {
   try {
-    const projectId = document.getElementById('chat-project').value || undefined;
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, projectId }),
-    });
-    const data = await resp.json();
-
-    // Remove thinking (handleChat may have already done this)
-    const thinking = document.querySelector('.chat-msg.thinking');
-    if (thinking) thinking.remove();
-
-    if (data.ok && data.response) {
-      const responseText = data.response.enhanced || data.response.title || data.response.verbatim || JSON.stringify(data.response);
-      appendChatMessage('assistant', responseText);
-    } else {
-      appendChatMessage('assistant', data.error || 'No response');
+    const resp = await fetch('/api/account');
+    if (resp.ok) {
+      accountState = await resp.json();
+      renderAccountPopover();
     }
   } catch (err) {
-    const thinking = document.querySelector('.chat-msg.thinking');
-    if (thinking) thinking.remove();
-    appendChatMessage('assistant', 'Connection error: ' + err.message);
+    console.error('[account] Failed to fetch state:', err);
   }
 }
 
-function appendChatMessage(role, text, isThinking = false) {
-  const container = document.getElementById('chat-messages');
-  if (!container) return;
+function renderAccountPopover() {
+  const body = document.getElementById('account-popover-body');
+  if (!body) return;
 
-  const el = document.createElement('div');
-  el.className = `chat-msg ${role}${isThinking ? ' thinking' : ''}`;
-  el.textContent = text;
-  container.appendChild(el);
-  container.scrollTop = container.scrollHeight;
-  return el;
+  const badge = document.getElementById('account-badge');
+
+  if (accountState.linked && accountState.profile) {
+    const p = accountState.profile;
+    const plan = p.subscriptionPlan || 'free';
+    const safePhotoURL = p.photoURL ? encodeURI(p.photoURL) : null;
+    const avatarContent = safePhotoURL
+      ? `<img src="${escapeHtml(safePhotoURL)}" alt="" referrerpolicy="no-referrer">`
+      : p.displayName?.charAt(0)?.toUpperCase() || '?';
+
+    body.innerHTML = `
+      <div class="account-profile">
+        <div class="account-avatar">${avatarContent}</div>
+        <div class="account-info">
+          <div class="account-name">${escapeHtml(p.displayName || 'Clearly User')}</div>
+          ${p.email ? `<div class="account-email">${escapeHtml(p.email)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+        <span class="account-tier-badge tier-${plan}">${plan}</span>
+        <div class="account-status">
+          <span class="account-status-dot ${accountState.connected ? '' : 'offline'}"></span>
+          ${accountState.connected ? 'Syncing to Clearly' : 'Offline'}
+        </div>
+      </div>
+      <button class="account-unlink-btn" id="account-unlink-btn">Unlink Account</button>
+    `;
+
+    // Bind unlink button (onclick="" doesn't work in ES modules)
+    const unlinkBtn = body.querySelector('#account-unlink-btn');
+    if (unlinkBtn) unlinkBtn.addEventListener('click', unlinkAccount);
+
+    // Show green badge on account button
+    if (badge) { badge.classList.remove('hidden'); }
+  } else {
+    body.innerHTML = `
+      <div class="account-unlinked-desc">
+        Link your Clearly account to sync your bee office to the cloud,
+        unlock building view, and access premium features.
+      </div>
+      <input type="text" id="account-token" class="account-token-input"
+             placeholder="Paste your relay token here..." autocomplete="off" spellcheck="false">
+      <div id="account-link-error" class="account-link-error"></div>
+      <button id="account-link-submit" class="account-link-btn">
+        Link Account
+      </button>
+      <div class="account-how-to">
+        Get your token from Clearly.sh &rarr; Settings &rarr; BeeHaven
+      </div>
+    `;
+
+    // Bind link button and input listeners
+    const linkBtn = body.querySelector('#account-link-submit');
+    const input = body.querySelector('#account-token');
+    if (linkBtn) {
+      linkBtn.disabled = true;
+      linkBtn.addEventListener('click', linkAccount);
+    }
+    if (input) {
+      input.addEventListener('input', () => {
+        if (linkBtn) linkBtn.disabled = input.value.trim().length < 32;
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && linkBtn && !linkBtn.disabled) linkAccount();
+      });
+    }
+
+    // Hide green badge
+    if (badge) { badge.classList.add('hidden'); }
+  }
 }
 
-async function loadProjects() {
-  try {
-    const resp = await fetch('/api/projects');
-    const data = await resp.json();
-    const select = document.getElementById('chat-project');
-    if (!select || !data.projects) return;
+async function linkAccount() {
+  const input = document.getElementById('account-token');
+  const btn = document.getElementById('account-link-submit');
+  const errorEl = document.getElementById('account-link-error');
+  if (!input || !btn) return;
 
-    // Keep first option
-    select.innerHTML = '<option value="">No project</option>';
-    for (const p of data.projects) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name || p.id;
-      select.appendChild(opt);
+  const token = input.value.trim();
+  if (token.length < 32) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Linking...';
+  if (errorEl) { errorEl.classList.remove('visible'); errorEl.textContent = ''; }
+
+  try {
+    const resp = await fetch('/api/account/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+
+    const result = await resp.json();
+
+    if (resp.ok && result.ok) {
+      accountState = { linked: true, profile: result.profile, tier: result.profile?.subscriptionPlan || 'free', connected: true };
+      renderAccountPopover();
+    } else {
+      if (errorEl) {
+        errorEl.textContent = result.error || 'Failed to link account';
+        errorEl.classList.add('visible');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Link Account';
     }
-  } catch {
-    // Silently fail
+  } catch (err) {
+    if (errorEl) {
+      errorEl.textContent = 'Network error — check your connection';
+      errorEl.classList.add('visible');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Link Account';
+  }
+}
+
+async function unlinkAccount() {
+  try {
+    await fetch('/api/account/unlink', { method: 'POST' });
+    accountState = { linked: false, profile: null, tier: 'local', connected: false };
+    renderAccountPopover();
+  } catch (err) {
+    console.error('[account] Unlink failed:', err);
   }
 }
 
@@ -3229,6 +3290,22 @@ function bindUI() {
     saveTermWindowState();
   });
 
+  // Account popover
+  document.getElementById('btn-account').addEventListener('click', toggleAccount);
+  document.getElementById('btn-account-close').addEventListener('click', toggleAccount);
+  document.addEventListener('click', (e) => {
+    if (!accountOpen) return;
+    const popover = document.getElementById('account-popover');
+    const btn = document.getElementById('btn-account');
+    if (!popover.contains(e.target) && !btn.contains(e.target)) {
+      accountOpen = false;
+      popover.classList.add('hidden');
+      btn.classList.remove('active');
+    }
+  });
+  // Fetch account state on load
+  fetchAccountState();
+
   // Shop popover
   document.getElementById('btn-shop').addEventListener('click', toggleShop);
   document.getElementById('btn-shop-close').addEventListener('click', toggleShop);
@@ -3241,14 +3318,6 @@ function bindUI() {
       popover.classList.add('hidden');
       btn.classList.remove('active');
     }
-  });
-
-  // Chat
-  document.getElementById('btn-chat').addEventListener('click', toggleChat);
-  document.getElementById('btn-chat-close').addEventListener('click', toggleChat);
-  document.getElementById('btn-chat-send').addEventListener('click', sendChat);
-  document.getElementById('chat-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendChat();
   });
 
   // Voice

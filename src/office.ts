@@ -6,7 +6,6 @@
 import type {
   BeeCharacter,
   BeeActivity,
-  ChatMessage,
   ClaudeEvent,
   EventLogEntry,
   OfficeState,
@@ -171,8 +170,6 @@ export class Office {
         commandsRun: 0,
         errors: 0,
       },
-      chat: { messages: [], isProcessing: false },
-      agentScripts: [],
       terminalLog: [],
       shop,
     };
@@ -439,34 +436,6 @@ export class Office {
     if (this.state.eventLog.length > 50) {
       this.state.eventLog.length = 50;
     }
-  }
-
-  /** Update recruiter bee state during chat interactions */
-  updateRecruiterState(activity: BeeActivity, room: Room, message: string) {
-    const recruiter = this.state.bees.find(b => b.id === 'recruiter');
-    if (recruiter) {
-      this.moveBee(recruiter, room, activity);
-      recruiter.message = message;
-    }
-  }
-
-  /** Add a chat message to session */
-  addChatMessage(msg: ChatMessage) {
-    if (!this.state.chat) {
-      this.state.chat = { messages: [], isProcessing: false };
-    }
-    this.state.chat.messages.push(msg);
-    if (this.state.chat.messages.length > 50) {
-      this.state.chat.messages = this.state.chat.messages.slice(-50);
-    }
-  }
-
-  /** Set chat processing state */
-  setChatProcessing(isProcessing: boolean) {
-    if (!this.state.chat) {
-      this.state.chat = { messages: [], isProcessing: false };
-    }
-    this.state.chat.isProcessing = isProcessing;
   }
 
   /** Add entry to terminal log (persists in state for reconnecting clients) */
