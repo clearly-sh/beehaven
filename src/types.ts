@@ -178,7 +178,7 @@ export interface ShopPersistData {
 
 /** WebSocket message from server to client */
 export interface WSMessage {
-  type: 'state' | 'event' | 'speech' | 'transcript' | 'shop-result';
+  type: 'state' | 'event' | 'speech' | 'transcript' | 'response' | 'shop-result';
   payload: unknown;
 }
 

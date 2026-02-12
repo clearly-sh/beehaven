@@ -438,15 +438,6 @@ export class Office {
     }
   }
 
-  /** Update recruiter bee state during chat interactions */
-  updateRecruiterState(activity: BeeActivity, room: Room, message: string) {
-    const recruiter = this.state.bees.find(b => b.id === 'recruiter');
-    if (recruiter) {
-      this.moveBee(recruiter, room, activity);
-      recruiter.message = message;
-    }
-  }
-
   /** Add entry to terminal log (persists in state for reconnecting clients) */
   addTerminalEntry(entry: TerminalEntry) {
     if (!this.state.terminalLog) this.state.terminalLog = [];

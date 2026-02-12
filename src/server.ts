@@ -380,7 +380,7 @@ export class Server {
 
   /** Broadcast raw Claude Code response content */
   broadcastResponse(data: { event: string; tool?: string; content: string }) {
-    this.broadcastMessage({ type: 'response' as any, payload: data });
+    this.broadcastMessage({ type: 'response', payload: data });
   }
 
   /** Whether any client has requested voice TTS */

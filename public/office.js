@@ -3082,8 +3082,9 @@ function renderAccountPopover() {
   if (accountState.linked && accountState.profile) {
     const p = accountState.profile;
     const plan = p.subscriptionPlan || 'free';
-    const avatarContent = p.photoURL
-      ? `<img src="${p.photoURL}" alt="" referrerpolicy="no-referrer">`
+    const safePhotoURL = p.photoURL ? encodeURI(p.photoURL) : null;
+    const avatarContent = safePhotoURL
+      ? `<img src="${escapeHtml(safePhotoURL)}" alt="" referrerpolicy="no-referrer">`
       : p.displayName?.charAt(0)?.toUpperCase() || '?';
 
     body.innerHTML = `
@@ -3101,8 +3102,12 @@ function renderAccountPopover() {
           ${accountState.connected ? 'Syncing to Clearly' : 'Offline'}
         </div>
       </div>
-      <button class="account-unlink-btn" onclick="unlinkAccount()">Unlink Account</button>
+      <button class="account-unlink-btn" id="account-unlink-btn">Unlink Account</button>
     `;
+
+    // Bind unlink button (onclick="" doesn't work in ES modules)
+    const unlinkBtn = body.querySelector('#account-unlink-btn');
+    if (unlinkBtn) unlinkBtn.addEventListener('click', unlinkAccount);
 
     // Show green badge on account button
     if (badge) { badge.classList.remove('hidden'); }
@@ -3115,7 +3120,7 @@ function renderAccountPopover() {
       <input type="text" id="account-token" class="account-token-input"
              placeholder="Paste your relay token here..." autocomplete="off" spellcheck="false">
       <div id="account-link-error" class="account-link-error"></div>
-      <button id="account-link-submit" class="account-link-btn" onclick="linkAccount()">
+      <button id="account-link-submit" class="account-link-btn">
         Link Account
       </button>
       <div class="account-how-to">
@@ -3123,20 +3128,21 @@ function renderAccountPopover() {
       </div>
     `;
 
-    // Enable/disable button based on input
-    setTimeout(() => {
-      const input = document.getElementById('account-token');
-      const btn = document.getElementById('account-link-submit');
-      if (input && btn) {
-        btn.disabled = true;
-        input.addEventListener('input', () => {
-          btn.disabled = input.value.trim().length < 32;
-        });
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && !btn.disabled) linkAccount();
-        });
-      }
-    }, 0);
+    // Bind link button and input listeners
+    const linkBtn = body.querySelector('#account-link-submit');
+    const input = body.querySelector('#account-token');
+    if (linkBtn) {
+      linkBtn.disabled = true;
+      linkBtn.addEventListener('click', linkAccount);
+    }
+    if (input) {
+      input.addEventListener('input', () => {
+        if (linkBtn) linkBtn.disabled = input.value.trim().length < 32;
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && linkBtn && !linkBtn.disabled) linkAccount();
+      });
+    }
 
     // Hide green badge
     if (badge) { badge.classList.add('hidden'); }
