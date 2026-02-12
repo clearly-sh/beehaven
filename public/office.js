@@ -281,7 +281,11 @@ async function handlePinComplete() {
     pinMode = 'confirm';
     pinDigits = [];
     updatePinDots();
-    document.getElementById('login-mode-label').textContent = 'Confirm PIN';
+    const label = document.getElementById('login-mode-label');
+    label.textContent = 'Confirm PIN';
+    label.classList.remove('pulse');
+    void label.offsetWidth; // force reflow to restart animation
+    label.classList.add('pulse');
     return;
   }
 
@@ -292,7 +296,9 @@ async function handlePinComplete() {
     } else {
       showPinError("PINs don't match — try again");
       pinMode = 'create';
-      document.getElementById('login-mode-label').textContent = 'Create PIN';
+      const label = document.getElementById('login-mode-label');
+      label.textContent = 'Create PIN';
+      label.classList.remove('pulse');
     }
     return;
   }

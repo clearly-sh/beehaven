@@ -138,11 +138,15 @@ body {
   position: relative;
   background: var(--bg-secondary);
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #office-viewport canvas {
   width: 100% !important;
   height: 100% !important;
+  object-fit: contain;
 }
 
 /* ---- Floating Terminal Window ---- */
@@ -1120,6 +1124,15 @@ body {
   letter-spacing: 1px;
   color: rgba(255, 255, 255, 0.35);
   margin-bottom: 12px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.login-mode-label.pulse {
+  animation: labelPulse 0.4s ease;
+  color: var(--accent-honey);
+}
+@keyframes labelPulse {
+  0% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 .pin-dots {
