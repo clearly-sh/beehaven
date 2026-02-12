@@ -6,10 +6,12 @@
 import type {
   BeeCharacter,
   BeeActivity,
+  CityProjectState,
   ClaudeEvent,
   EventLogEntry,
   OfficeState,
   OfficeStats,
+  ProjectSyncData,
   Room,
   RoomDef,
   SessionPersistData,
@@ -19,6 +21,7 @@ import type {
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { scanProjectFiles } from './file-tree.js';
 import {
   HONEY_REWARDS,
   loadShopState,
@@ -129,6 +132,8 @@ export class Office {
   private deletedProjects = new Set<string>();
   private sessionProjects = new Map<string, string>();
   private activeSessions = new Map<string, string>(); // session_id → project
+  private projectPaths = new Map<string, string>(); // project name → absolute cwd path
+  private cityState = new Map<string, CityProjectState>(); // project → indicators + board
   private static CONFIG_DIR = join(homedir(), '.beehaven');
   private static CONFIG_FILE = join(homedir(), '.beehaven', 'config.json');
 
@@ -235,13 +240,56 @@ export class Office {
           if (projectName && !this.deletedProjects.has(projectName)) {
             this.knownProjects.add(projectName);
           }
+          // Decode directory name to absolute path for file tree scanning
+          if (projectName && !this.projectPaths.has(projectName)) {
+            const absPath = '/' + d.name.slice(1);
+            const resolved = this.resolveEncodedPath(absPath);
+            if (resolved && existsSync(resolved)) {
+              this.projectPaths.set(projectName, resolved);
+            }
+          }
         }
       }
     } catch { /* claude dir may not exist */ }
 
-    // Projects tabs show only active sessions — populated dynamically via processEvent
     console.log(`[office] Known projects (from history): ${Array.from(this.knownProjects).join(', ') || 'none'}`);
-    this.state.projects = [];
+    console.log(`[office] Project paths: ${Array.from(this.projectPaths.entries()).map(([k, v]) => `${k}→${v}`).join(', ') || 'none'}`);
+    this.refreshActiveProjects();
+  }
+
+  /** Resolve an encoded Claude projects path by walking the filesystem */
+  private resolveEncodedPath(encoded: string): string | null {
+    const parts = encoded.split('/').filter(Boolean);
+    if (parts.length !== 1) return null;
+
+    const segments = parts[0].split('-');
+    let current = '';
+    let i = 0;
+    while (i < segments.length) {
+      let found = false;
+      for (let len = segments.length - i; len >= 1; len--) {
+        const candidate = segments.slice(i, i + len).join('-');
+        const testPath = current + '/' + candidate;
+        try {
+          if (existsSync(testPath)) {
+            current = testPath;
+            i += len;
+            found = true;
+            break;
+          }
+        } catch { /* skip */ }
+      }
+      if (!found) {
+        current += '/' + segments[i];
+        i++;
+      }
+    }
+    return existsSync(current) ? current : null;
+  }
+
+  /** Get the absolute filesystem path for a project */
+  getProjectPath(name: string): string | undefined {
+    return this.projectPaths.get(name);
   }
 
   /** Process a Claude Code event and update office state */
@@ -258,6 +306,11 @@ export class Office {
       queen.project = project;
     } else if (project) {
       queen.project = project;
+    }
+
+    // Store project → absolute path mapping for file tree scanning
+    if (project && event.cwd) {
+      this.projectPaths.set(project, event.cwd.replace(/\/+$/, ''));
     }
 
     // Track session → project mapping
@@ -515,6 +568,43 @@ export class Office {
     }
   }
 
+  /** Get or create city state for a project */
+  getCityState(project: string): CityProjectState {
+    let s = this.cityState.get(project);
+    if (!s) {
+      s = { indicators: [], board: [] };
+      this.cityState.set(project, s);
+    }
+    return s;
+  }
+
+  /** Assemble full project context for Clearly cloud sync */
+  getProjectSyncData(project: string): ProjectSyncData | null {
+    const rootPath = this.projectPaths.get(project);
+    if (!rootPath) return null;
+
+    const tree = scanProjectFiles(project, rootPath);
+    const fileTree = tree
+      ? { files: tree.files, directories: tree.directories, fileCount: tree.files.length }
+      : { files: [], directories: [], fileCount: 0 };
+
+    const cityState = this.getCityState(project);
+
+    const allEntries = this.state.terminalLog || [];
+    const projectEntries = allEntries
+      .filter(e => e.project === project)
+      .slice(-200);
+
+    return {
+      project,
+      path: rootPath,
+      fileTree,
+      cityState,
+      conversations: projectEntries,
+      syncedAt: Date.now(),
+    };
+  }
+
   getState(): OfficeState {
     return this.state;
   }
@@ -546,13 +636,18 @@ export class Office {
     this.refreshActiveProjects();
   }
 
-  /** Rebuild state.projects from active sessions (deduped, sorted) */
+  /** Rebuild state.projects from active sessions + known projects with paths */
   private refreshActiveProjects() {
-    const active = new Set<string>();
+    const all = new Set<string>();
     for (const proj of this.activeSessions.values()) {
-      if (!this.deletedProjects.has(proj)) active.add(proj);
+      if (!this.deletedProjects.has(proj)) all.add(proj);
     }
-    this.state.projects = Array.from(active).sort();
+    for (const proj of this.knownProjects) {
+      if (!this.deletedProjects.has(proj) && this.projectPaths.has(proj)) {
+        all.add(proj);
+      }
+    }
+    this.state.projects = Array.from(all).sort();
   }
 
   // --- Session Persistence ---

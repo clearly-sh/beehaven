@@ -3,10 +3,10 @@
 // Syncs local Office state to Clearly's Firestore via Cloud Function
 // ============================================================================
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'fs';
 import { homedir, hostname, platform } from 'os';
 import { join } from 'path';
-import type { OfficeState, ClaudeEvent, BuildingState, ClearlyProfile } from './types.js';
+import type { OfficeState, ClaudeEvent, BuildingState, ClearlyProfile, ProjectSyncData } from './types.js';
 
 const CONFIG_DIR = join(homedir(), '.beehaven');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -28,6 +28,21 @@ export class Relay {
   private tier = 'free';
   private profile: ClearlyProfile | null = null;
   private deviceId: string;
+
+  /** Per-project sync debounce timestamps */
+  private projectSyncTimestamps = new Map<string, number>();
+
+  /** Per-project sync details for UI */
+  private projectSyncDetails = new Map<string, {
+    lastSyncAt: number;
+    fileCount: number;
+    conversationCount: number;
+    docCount: number;
+    transcriptUploaded: boolean;
+  }>();
+
+  /** Timestamp of most recent successful sync of any type */
+  private lastSyncAt = 0;
 
   /** Debounce interval — batch rapid events into single writes */
   private debounceMs = 300;
@@ -78,6 +93,27 @@ export class Relay {
   /** User profile from last heartbeat */
   getProfile(): ClearlyProfile | null {
     return this.profile;
+  }
+
+  /** Get sync status for UI display */
+  getSyncStatus() {
+    const projects: Record<string, {
+      lastSyncAt: number;
+      fileCount: number;
+      conversationCount: number;
+      docCount: number;
+      transcriptUploaded: boolean;
+    }> = {};
+    for (const [name, details] of this.projectSyncDetails) {
+      projects[name] = { ...details };
+    }
+    return {
+      connected: this.connected,
+      sent: this.stats.sent,
+      failed: this.stats.failed,
+      lastSyncAt: this.lastSyncAt,
+      projects,
+    };
   }
 
   /** Configure relay with a new token (for account linking) */
@@ -227,6 +263,139 @@ export class Relay {
     }
   }
 
+  /** Sync project context to Clearly cloud (debounced per project — max once per 30s) */
+  async syncProject(data: ProjectSyncData): Promise<void> {
+    if (!this.config || !this.connected) return;
+
+    const now = Date.now();
+    const lastSync = this.projectSyncTimestamps.get(data.project) || 0;
+    if (now - lastSync < 30_000) return; // Debounce: max once per 30s per project
+
+    this.projectSyncTimestamps.set(data.project, now);
+
+    try {
+      await this.post('project-sync', { projectData: data });
+      this.lastSyncAt = Date.now();
+
+      // Update per-project details for UI
+      const existing = this.projectSyncDetails.get(data.project);
+      this.projectSyncDetails.set(data.project, {
+        lastSyncAt: Date.now(),
+        fileCount: data.fileTree.fileCount,
+        conversationCount: data.conversations.length,
+        docCount: existing?.docCount || 0,
+        transcriptUploaded: existing?.transcriptUploaded || false,
+      });
+
+      console.log(`[relay] Project synced: ${data.project} (${data.fileTree.fileCount} files, ${data.conversations.length} entries)`);
+    } catch (err: any) {
+      console.error(`[relay] Project sync failed: ${err.message}`);
+    }
+  }
+
+  /** Upload a session transcript JSONL to Cloud Storage via signed URL */
+  async uploadTranscript(transcriptPath: string, sessionId: string, project?: string): Promise<void> {
+    if (!this.config || !this.connected) return;
+    if (!existsSync(transcriptPath)) return;
+
+    try {
+      // Check file size — skip if > 10MB
+      const fileSize = statSync(transcriptPath).size;
+      if (fileSize > 10 * 1024 * 1024) {
+        console.warn(`[relay] Transcript too large (${(fileSize / 1024 / 1024).toFixed(1)}MB), skipping`);
+        return;
+      }
+
+      // Request signed upload URL from Cloud Function
+      const resp = await this.post('get-upload-url', {
+        path: `transcripts/${sessionId}.jsonl`,
+        contentType: 'application/x-ndjson',
+      });
+
+      if (!resp?.uploadUrl) {
+        console.warn('[relay] Failed to get upload URL for transcript');
+        return;
+      }
+
+      // Upload directly to Cloud Storage
+      const content = readFileSync(transcriptPath);
+      const uploadResp = await fetch(resp.uploadUrl as string, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/x-ndjson',
+        },
+        body: content,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (uploadResp.ok) {
+        this.lastSyncAt = Date.now();
+        // Mark transcript uploaded for the project
+        if (project) {
+          const existing = this.projectSyncDetails.get(project);
+          if (existing) {
+            existing.transcriptUploaded = true;
+            existing.lastSyncAt = Date.now();
+          }
+        }
+        console.log(`[relay] Transcript uploaded: ${sessionId} (${(fileSize / 1024).toFixed(0)}KB)`);
+      } else {
+        console.error(`[relay] Transcript upload failed: ${uploadResp.status}`);
+      }
+    } catch (err: any) {
+      console.error(`[relay] Transcript upload error: ${err.message}`);
+    }
+  }
+
+  /** Sync project documentation files (README.md, CLAUDE.md, package.json) to Firestore */
+  async uploadDocs(project: string, projectRoot: string): Promise<void> {
+    if (!this.config || !this.connected) return;
+
+    const DOC_FILES = ['README.md', 'CLAUDE.md', 'package.json'];
+    const docs: { name: string; content: string }[] = [];
+
+    for (const name of DOC_FILES) {
+      const filePath = join(projectRoot, name);
+      if (!existsSync(filePath)) continue;
+
+      try {
+        const content = readFileSync(filePath, 'utf8');
+        // Skip files larger than 500KB
+        if (content.length > 500_000) {
+          console.warn(`[relay] Doc ${name} too large (${(content.length / 1024).toFixed(0)}KB), skipping`);
+          continue;
+        }
+        docs.push({ name, content });
+      } catch { continue; }
+    }
+
+    if (docs.length === 0) return;
+
+    try {
+      await this.post('doc-sync', { project, docs });
+      this.lastSyncAt = Date.now();
+
+      // Update per-project doc count
+      const existing = this.projectSyncDetails.get(project);
+      if (existing) {
+        existing.docCount = docs.length;
+        existing.lastSyncAt = Date.now();
+      } else {
+        this.projectSyncDetails.set(project, {
+          lastSyncAt: Date.now(),
+          fileCount: 0,
+          conversationCount: 0,
+          docCount: docs.length,
+          transcriptUploaded: false,
+        });
+      }
+
+      console.log(`[relay] Docs synced: ${project} (${docs.map(d => d.name).join(', ')})`);
+    } catch (err: any) {
+      console.error(`[relay] Doc sync failed: ${err.message}`);
+    }
+  }
+
   // ---- Private ----
 
   /** Flush pending state + events as a single batch request */
@@ -276,6 +445,7 @@ export class Relay {
       sessionActive: state.sessionActive,
       eventLog: state.eventLog.slice(0, 20),
       stats: state.stats,
+      projects: state.projects || [],
     };
   }
 
@@ -335,7 +505,7 @@ export class Relay {
 
   /** POST to the relay endpoint */
   private async post(
-    type: 'state' | 'event' | 'heartbeat' | 'batch' | 'building' | 'claim-desk',
+    type: 'state' | 'event' | 'heartbeat' | 'batch' | 'building' | 'claim-desk' | 'project-sync' | 'get-upload-url' | 'doc-sync',
     data: Record<string, unknown>
   ): Promise<Record<string, unknown> | null> {
     if (!this.config) return null;

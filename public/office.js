@@ -158,7 +158,7 @@ const TERM_POSITION_KEY = 'beehaven-term-position';
 let termPosition = localStorage.getItem(TERM_POSITION_KEY) || 'pos-bl';
 let shopOpen = false;
 let accountOpen = false;
-let accountState = { linked: false, profile: null, tier: 'local', connected: false };
+let accountState = { linked: false, profile: null, tier: 'local', connected: false, syncStatus: null };
 
 // --- Camera (Zoom / Pan) ---
 let camera = { x: 0, y: 0, zoom: 1 };
@@ -460,7 +460,8 @@ function isWalkable(x, y) {
 }
 
 // --- Login / PIN ---
-const PIN_STORAGE_KEY = 'beehaven-pin-hash';
+// PIN hash is persisted server-side in ~/.beehaven/config.json
+let serverPinHash = null; // fetched from server on init
 let pinDigits = [];
 let pinMode = 'verify'; // 'create' | 'confirm' | 'verify'
 let pinFirstEntry = '';
@@ -469,6 +470,27 @@ async function hashPin(pin) {
   const data = new TextEncoder().encode('beehaven-salt-' + pin);
   const buf = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function fetchPinHash() {
+  try {
+    const res = await fetch('/api/pin');
+    const data = await res.json();
+    return data.pinHash || null;
+  } catch { return null; }
+}
+
+async function savePinHash(hash) {
+  serverPinHash = hash;
+  try {
+    await fetch('/api/pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinHash: hash }),
+    });
+  } catch (err) {
+    console.warn('[pin] Failed to save PIN to server:', err);
+  }
 }
 
 function updatePinDots() {
@@ -497,7 +519,7 @@ async function handlePinComplete() {
 
   if (pinMode === 'confirm') {
     if (hash === pinFirstEntry) {
-      localStorage.setItem(PIN_STORAGE_KEY, hash);
+      await savePinHash(hash);
       loginSuccess();
     } else {
       showPinError("PINs don't match — try again");
@@ -510,8 +532,7 @@ async function handlePinComplete() {
   }
 
   // Verify mode
-  const stored = localStorage.getItem(PIN_STORAGE_KEY);
-  if (hash === stored) {
+  if (hash === serverPinHash) {
     loginSuccess();
   } else {
     showPinError('Wrong PIN — try again');
@@ -546,7 +567,7 @@ function loginSuccess() {
   }, 400);
 }
 
-function initLogin() {
+async function initLogin() {
   const loginScreen = document.getElementById('login-screen');
   if (!loginScreen) { return; }
 
@@ -558,9 +579,19 @@ function initLogin() {
     return;
   }
 
+  // Fetch PIN hash from server (persisted in ~/.beehaven/config.json)
+  serverPinHash = await fetchPinHash();
+
+  // Migrate from localStorage if server has no PIN yet
+  const legacyHash = localStorage.getItem('beehaven-pin-hash');
+  if (!serverPinHash && legacyHash) {
+    await savePinHash(legacyHash);
+    localStorage.removeItem('beehaven-pin-hash');
+    serverPinHash = legacyHash;
+  }
+
   // Determine mode
-  const storedHash = localStorage.getItem(PIN_STORAGE_KEY);
-  if (storedHash) {
+  if (serverPinHash) {
     pinMode = 'verify';
     document.getElementById('login-mode-label').textContent = 'Enter PIN';
   } else {
@@ -3572,6 +3603,14 @@ function handleState(state) {
     renderTerminalFromState(filteredTerminal);
   }
 
+  // Sync status from relay (piggybacked on state broadcast)
+  if (state.syncStatus) {
+    accountState.syncStatus = state.syncStatus;
+    accountState.connected = state.syncStatus.connected;
+    // Live-update the popover if it's open
+    if (accountOpen) updateSyncDashboard();
+  }
+
   // Welcome overlay
   const overlay = document.getElementById('office-viewport');
   if (overlay) {
@@ -4088,14 +4127,83 @@ function toggleAccount() {
 
 async function fetchAccountState() {
   try {
-    const resp = await fetch('/api/account');
-    if (resp.ok) {
-      accountState = await resp.json();
-      renderAccountPopover();
+    const [accountResp, syncResp] = await Promise.all([
+      fetch('/api/account'),
+      fetch('/api/account/sync'),
+    ]);
+    if (accountResp.ok) {
+      accountState = await accountResp.json();
     }
+    if (syncResp.ok) {
+      accountState.syncStatus = await syncResp.json();
+    }
+    renderAccountPopover();
   } catch (err) {
     console.error('[account] Failed to fetch state:', err);
   }
+}
+
+/** Format a timestamp as a relative time string */
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const diff = Date.now() - ts;
+  if (diff < 5000) return 'just now';
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+  return `${Math.floor(diff / 86400_000)}d ago`;
+}
+
+/** Render or update the sync dashboard inside the account popover */
+function updateSyncDashboard() {
+  const container = document.getElementById('sync-dashboard');
+  if (!container) return;
+
+  const sync = accountState.syncStatus;
+  if (!sync || !accountState.connected) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const projects = sync.projects || {};
+  const projectNames = Object.keys(projects);
+
+  let projectsHtml = '';
+  for (const name of projectNames) {
+    const p = projects[name];
+    projectsHtml += `
+      <div class="sync-project">
+        <div class="sync-project-header">
+          <span class="sync-project-name">${escapeHtml(name)}</span>
+          <span class="sync-project-time">${timeAgo(p.lastSyncAt)}</span>
+        </div>
+        <div class="sync-project-stats">
+          <span class="sync-project-stat"><span class="sync-project-stat-icon">&#x1F4C1;</span> ${p.fileCount}</span>
+          <span class="sync-project-stat"><span class="sync-project-stat-icon">&#x1F4AC;</span> ${p.conversationCount}</span>
+          <span class="sync-project-stat"><span class="sync-project-stat-icon">&#x1F4C4;</span> ${p.docCount}</span>
+          ${p.transcriptUploaded ? '<span class="sync-check">&#x2713; transcript</span>' : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="sync-section">
+      <div class="sync-section-label">Cloud Sync</div>
+      <div class="sync-summary">
+        <span class="sync-stat">
+          <span class="sync-stat-icon">&#x2191;</span>
+          <span class="sync-stat-val">${sync.sent}</span> sent
+        </span>
+        <span class="sync-stat ${sync.failed > 0 ? 'error' : ''}">
+          <span class="sync-stat-icon">&#x2717;</span>
+          <span class="sync-stat-val">${sync.failed}</span> failed
+        </span>
+      </div>
+      <div class="sync-time">Last sync: ${timeAgo(sync.lastSyncAt)}</div>
+      ${projectNames.length > 0 ? `<div class="sync-projects">${projectsHtml}</div>` : ''}
+    </div>
+  `;
 }
 
 function renderAccountPopover() {
@@ -4127,8 +4235,12 @@ function renderAccountPopover() {
           ${accountState.connected ? 'Syncing to Clearly' : 'Offline'}
         </div>
       </div>
+      <div id="sync-dashboard"></div>
       <button class="account-unlink-btn" id="account-unlink-btn">Unlink Account</button>
     `;
+
+    // Render sync dashboard content
+    updateSyncDashboard();
 
     // Bind unlink button (onclick="" doesn't work in ES modules)
     const unlinkBtn = body.querySelector('#account-unlink-btn');

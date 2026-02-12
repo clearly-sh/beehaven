@@ -646,6 +646,99 @@ body {
 }
 .account-unlink-btn:hover { border-color: var(--accent-pink); color: var(--accent-pink); }
 
+/* ---- Sync Dashboard (inside account popover) ---- */
+.sync-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.sync-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.sync-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sync-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.sync-stat-icon {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.sync-stat-val {
+  font-weight: 600;
+  color: var(--text-on-dark);
+  font-variant-numeric: tabular-nums;
+}
+.sync-stat.error .sync-stat-val { color: var(--accent-pink); }
+.sync-stat.error .sync-stat-icon { color: var(--accent-pink); }
+.sync-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.sync-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.sync-projects::-webkit-scrollbar { width: 4px; }
+.sync-projects::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+.sync-project {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+.sync-project:hover { background: rgba(255, 255, 255, 0.07); }
+.sync-project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.sync-project-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-on-dark);
+}
+.sync-project-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.sync-project-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.sync-project-stat {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.sync-project-stat-icon { opacity: 0.6; }
+.sync-check { color: var(--accent-green); font-size: 10px; }
+
 /* ---- Speech Bar ---- */
 .speech-bar {
   position: fixed;

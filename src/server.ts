@@ -177,6 +177,15 @@ export class Server {
       res.json({ ok: true });
     });
 
+    // GET /api/account/sync — Detailed sync status for UI
+    this.app.get('/api/account/sync', (_req, res) => {
+      if (!this.relay?.isConnected()) {
+        res.json({ connected: false, sent: 0, failed: 0, lastSyncAt: 0, projects: {} });
+        return;
+      }
+      res.json(this.relay.getSyncStatus());
+    });
+
     // API: Save config (from onboarding wizard)
     this.app.post('/api/config', (req, res) => {
       try {
@@ -196,6 +205,23 @@ export class Server {
       } catch (err) {
         res.status(500).json({ error: 'Failed to save config' });
       }
+    });
+
+    // API: Get PIN hash (server-persisted instead of localStorage)
+    this.app.get('/api/pin', (_req, res) => {
+      const config = loadOnboardingConfig();
+      res.json({ pinHash: config.pinHash || null });
+    });
+
+    // API: Save PIN hash
+    this.app.post('/api/pin', (req, res) => {
+      const { pinHash } = req.body;
+      if (typeof pinHash !== 'string' || pinHash.length !== 64) {
+        res.status(400).json({ error: 'Invalid PIN hash' });
+        return;
+      }
+      saveOnboardingConfig({ pinHash });
+      res.json({ ok: true });
     });
 
     // API: Get building state (proxy to relay)
@@ -398,7 +424,11 @@ export class Server {
 
   /** Broadcast office state to all connected clients */
   broadcastState(state: OfficeState) {
-    this.broadcastMessage({ type: 'state', payload: state });
+    const payload: Record<string, unknown> = { ...state };
+    if (this.relay?.isConnected()) {
+      payload.syncStatus = this.relay.getSyncStatus();
+    }
+    this.broadcastMessage({ type: 'state', payload });
   }
 
   /** Broadcast event notification */
@@ -407,8 +437,8 @@ export class Server {
   }
 
   /** Broadcast speech audio (base64 encoded) */
-  broadcastSpeech(audioBase64: string, text: string) {
-    this.broadcastMessage({ type: 'speech', payload: { audio: audioBase64, text } });
+  broadcastSpeech(audioBase64: string, text: string, project?: string) {
+    this.broadcastMessage({ type: 'speech', payload: { audio: audioBase64, text, project } });
   }
 
   /** Broadcast raw Claude Code response content */

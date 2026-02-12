@@ -214,6 +214,7 @@ export interface OnboardingConfig {
   tier: BeeHavenTier;
   token?: string;
   endpoint?: string;
+  pinHash?: string;
   building?: {
     id: string;
     name: string;
@@ -245,4 +246,55 @@ export interface DeskState {
   userId?: string;
   displayName?: string;
   active: boolean;
+}
+
+// ============================================================================
+// City State Types (used by project sync)
+// ============================================================================
+
+/** Indicator types that can be placed on city buildings */
+export type IndicatorType = 'bug' | 'feature' | 'refactor' | 'priority' | 'in-progress' | 'done';
+
+/** An indicator badge on a building in the city view */
+export interface CityIndicator {
+  type: IndicatorType;
+  note: string;
+  file: string;       // relative path e.g. "src/server.ts"
+  addedAt: number;
+}
+
+/** A board item in the project Kanban board */
+export interface BoardItem {
+  id: string;
+  title: string;
+  status: 'backlog' | 'in-progress' | 'done';
+  file?: string;
+  indicator?: IndicatorType;
+  note?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Per-project city state (indicators + board) */
+export interface CityProjectState {
+  indicators: CityIndicator[];
+  board: BoardItem[];
+}
+
+// ============================================================================
+// Project Sync Types (Clearly Integration)
+// ============================================================================
+
+/** Full project context payload synced to Clearly cloud */
+export interface ProjectSyncData {
+  project: string;
+  path: string;
+  fileTree: {
+    files: { path: string; name: string; ext: string; dir: string; size: number }[];
+    directories: string[];
+    fileCount: number;
+  };
+  cityState: CityProjectState;
+  conversations: TerminalEntry[];
+  syncedAt: number;
 }
