@@ -11,40 +11,40 @@ const COORD_SCALE = 2; // Backend rooms are half-scale
 
 // WeWork palette
 const P = {
-  floor:      0xf5f0eb,
-  floorLine:  0xede7df,
-  wall:       0xd4d0cc,
-  wallDark:   0xa8a8a8,
-  wood:       0xc4a882,
-  woodDark:   0x8b7355,
-  glass:      0xe8f4f8,
-  glassBrd:   0xb8d4e3,
-  cushion:    0x4a6741,
-  cushionAlt: 0xc17f3a,
-  plant:      0x4ade80,
-  plantDark:  0x22c55e,
-  planter:    0xd4c5a9,
-  honey:      0xf5c542,
-  white:      0xffffff,
-  offWhite:   0xf5f0eb,
-  dark:       0x2D2926,
-  leather:    0x6b5b4e,
-  monitor:    0x1e293b,
-  monGlow:    0x3b82f6,
-  led:        0x22c55e,
-  ledRed:     0xEF4444,
+  floor:      0x1a1a2e,
+  floorLine:  0x22223a,
+  wall:       0x2a2a44,
+  wallDark:   0x14142a,
+  wood:       0x5c3d1e,
+  woodDark:   0x3a2510,
+  glass:      0x1a3050,
+  glassBrd:   0x2a5080,
+  cushion:    0x1a4a3a,
+  cushionAlt: 0x8a4a0a,
+  plant:      0x1a8a4a,
+  plantDark:  0x0a6a30,
+  planter:    0x3a3028,
+  honey:      0xC8AA6E,
+  white:      0xd0c8b8,
+  offWhite:   0x252540,
+  dark:       0x0a0a18,
+  leather:    0x3a2820,
+  monitor:    0x080818,
+  monGlow:    0x0AC8B9,
+  led:        0x0AC8B9,
+  ledRed:     0xC8354C,
 };
 
 // Room definitions (backend coords * COORD_SCALE)
 const ROOMS = [
-  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0xFEF3C7, accent: 0xD4A017 },
-  { id: 'desk',         label: 'Team Office',   x: 250,  y: 40,  w: 600, h: 340, color: 0xDBEAFE, accent: 0x60A5FA },
-  { id: 'phone-a',      label: 'Phone',         x: 40,   y: 40,  w: 80,  h: 100, color: 0xE0F2FE, accent: 0x38BDF8 },
-  { id: 'phone-b',      label: 'Phone',         x: 1060, y: 40,  w: 80,  h: 100, color: 0xE0F2FE, accent: 0x38BDF8 },
-  { id: 'server-room',  label: 'Server Room',   x: 1000, y: 470, w: 120, h: 160, color: 0xFEE2E2, accent: 0xEF4444 },
-  { id: 'meeting-room', label: 'Conference',     x: 40,   y: 470, w: 200, h: 200, color: 0xD1FAE5, accent: 0x22C55E },
-  { id: 'water-cooler', label: 'Lounge',         x: 640,  y: 470, w: 250, h: 200, color: 0xE0F2FE, accent: 0x38BDF8 },
-  { id: 'coffee',       label: 'Kitchen',        x: 340,  y: 470, w: 200, h: 200, color: 0xFED7AA, accent: 0xF59E0B },
+  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0x1e1a10, accent: 0xC8AA6E },
+  { id: 'desk',         label: 'Team Office',   x: 250,  y: 40,  w: 600, h: 340, color: 0x101828, accent: 0x0AC8B9 },
+  { id: 'phone-a',      label: 'Phone',         x: 40,   y: 40,  w: 80,  h: 100, color: 0x0e1a2a, accent: 0x0397AB },
+  { id: 'phone-b',      label: 'Phone',         x: 1060, y: 40,  w: 80,  h: 100, color: 0x0e1a2a, accent: 0x0397AB },
+  { id: 'server-room',  label: 'Server Room',   x: 1000, y: 470, w: 120, h: 160, color: 0x1a0e10, accent: 0xC8354C },
+  { id: 'meeting-room', label: 'Conference',     x: 40,   y: 470, w: 200, h: 200, color: 0x0e1a14, accent: 0x1EBB70 },
+  { id: 'water-cooler', label: 'Lounge',         x: 640,  y: 470, w: 250, h: 200, color: 0x141028, accent: 0x7B5EA7 },
+  { id: 'coffee',       label: 'Kitchen',        x: 340,  y: 470, w: 200, h: 200, color: 0x1a1408, accent: 0xC89B3C },
 ];
 
 // Local ambient bees (rendered client-side alongside backend bees)
@@ -84,11 +84,9 @@ let buildingProjects = []; // project names for building view
 let buildingClickAreas = []; // { project, x, y, w, h } for click detection
 
 // --- Floating Terminal Window State ---
-const TERM_DEFAULTS = { x: 16, y: null, width: 560, height: 380, minimized: false, visible: true };
-let termWindow = { ...TERM_DEFAULTS };
-let termDragging = false, termResizing = false, termResizeDir = '';
-let termDragOffset = { x: 0, y: 0 };
-let termPreMaximize = null;
+const TERM_POSITIONS = ['pos-bl', 'pos-br', 'pos-tl', 'pos-tr'];
+const TERM_POSITION_KEY = 'beehaven-term-position';
+let termPosition = localStorage.getItem(TERM_POSITION_KEY) || 'pos-bl';
 let shopOpen = false;
 let accountOpen = false;
 let accountState = { linked: false, profile: null, tier: 'local', connected: false };
@@ -142,27 +140,74 @@ let elevator = {
 
 // --- A* Waypoint Pathfinding ---
 const WAYPOINTS = [
-  { id: 'phone-a',      x: 80,   y: 90,   room: 'phone-a' },
-  { id: 'desk',         x: 500,  y: 200,  room: 'desk' },
-  { id: 'phone-b',      x: 1100, y: 90,   room: 'phone-b' },
-  { id: 'lobby',        x: 140,  y: 425,  room: 'lobby' },
-  { id: 'meeting-room', x: 140,  y: 570,  room: 'meeting-room' },
-  { id: 'coffee',       x: 440,  y: 570,  room: 'coffee' },
-  { id: 'water-cooler', x: 765,  y: 570,  room: 'water-cooler' },
-  { id: 'server-room',  x: 1060, y: 550,  room: 'server-room' },
-  { id: 'hall-L',       x: 200,  y: 420,  room: null },
-  { id: 'hall-C',       x: 500,  y: 420,  room: null },
-  { id: 'hall-R',       x: 880,  y: 420,  room: null },
+  // ── Room interiors ──
+  { id: 'phone-a',       x: 80,   y: 90,   room: 'phone-a' },
+  { id: 'desk',          x: 500,  y: 200,  room: 'desk' },
+  { id: 'phone-b',       x: 1100, y: 90,   room: 'phone-b' },
+  { id: 'lobby',         x: 140,  y: 430,  room: 'lobby' },
+  { id: 'meeting-room',  x: 140,  y: 570,  room: 'meeting-room' },
+  { id: 'coffee',        x: 440,  y: 570,  room: 'coffee' },
+  { id: 'water-cooler',  x: 765,  y: 570,  room: 'water-cooler' },
+  { id: 'server-room',   x: 1060, y: 550,  room: 'server-room' },
+
+  // ── Door thresholds (just outside each door) ──
+  { id: 'door-pa',       x: 80,   y: 152,  room: null },  // phone-a bottom
+  { id: 'door-pb',       x: 1100, y: 152,  room: null },  // phone-b bottom
+  { id: 'door-desk-W',   x: 242,  y: 144,  room: null },  // desk left side
+  { id: 'door-desk-E',   x: 858,  y: 144,  room: null },  // desk right side
+  { id: 'door-desk-L',   x: 403,  y: 390,  room: null },  // desk bottom-left
+  { id: 'door-desk-R',   x: 638,  y: 390,  room: null },  // desk bottom-right
+  { id: 'door-lobby-N',  x: 178,  y: 395,  room: null },  // lobby top
+  { id: 'door-lobby-R',  x: 250,  y: 430,  room: null },  // lobby right
+  { id: 'door-lobby-S',  x: 140,  y: 465,  room: null },  // lobby bottom / meeting top
+  { id: 'door-coffee',   x: 440,  y: 465,  room: null },  // coffee top
+  { id: 'door-lounge',   x: 741,  y: 465,  room: null },  // water-cooler top
+  { id: 'door-server',   x: 1060, y: 465,  room: null },  // server-room top
+
+  // ── Corridors (open space flanking desk room) ──
+  { id: 'corr-L',        x: 80,   y: 270,  room: null },  // left of desk
+  { id: 'corr-R',        x: 1100, y: 270,  room: null },  // right of desk
+
+  // ── Main hallway (y≈420, right of lobby) ──
+  { id: 'hall-1',        x: 280,  y: 420,  room: null },
+  { id: 'hall-2',        x: 440,  y: 420,  room: null },
+  { id: 'hall-3',        x: 640,  y: 420,  room: null },
+  { id: 'hall-4',        x: 880,  y: 420,  room: null },
+  { id: 'hall-5',        x: 1060, y: 420,  room: null },
 ];
 
 const EDGES = [
-  ['phone-a', 'desk'],      ['desk', 'phone-b'],
-  ['phone-a', 'hall-L'],    ['desk', 'hall-C'],
-  ['desk', 'hall-R'],       ['phone-b', 'hall-R'],
-  ['hall-L', 'hall-C'],     ['hall-C', 'hall-R'],
-  ['hall-L', 'lobby'],      ['lobby', 'meeting-room'],
-  ['hall-L', 'meeting-room'], ['hall-C', 'coffee'],
-  ['hall-R', 'water-cooler'], ['hall-R', 'server-room'],
+  // ── Phone booths → corridors ──
+  ['phone-a', 'door-pa'],      ['door-pa', 'corr-L'],
+  ['phone-b', 'door-pb'],      ['door-pb', 'corr-R'],
+
+  // ── Desk → all 4 doors ──
+  ['desk', 'door-desk-W'],     ['desk', 'door-desk-E'],
+  ['desk', 'door-desk-L'],     ['desk', 'door-desk-R'],
+
+  // ── Corridors ↔ desk side doors (short path between phone booths and desk) ──
+  ['corr-L', 'door-desk-W'],   ['corr-R', 'door-desk-E'],
+
+  // ── Corridors → lobby / hallway ──
+  ['corr-L', 'door-lobby-N'],  ['door-lobby-N', 'lobby'],
+  ['corr-R', 'hall-4'],
+
+  // ── Lobby hub (vestibule connecting left corridor to hallway and meeting room) ──
+  ['lobby', 'door-lobby-R'],   ['door-lobby-R', 'hall-1'],
+  ['lobby', 'door-lobby-S'],   ['door-lobby-S', 'meeting-room'],
+
+  // ── Desk bottom doors → hallway ──
+  ['door-desk-L', 'hall-2'],   ['door-desk-R', 'hall-3'],
+
+  // ── Hallway spine (horizontal) ──
+  ['hall-1', 'hall-2'],  ['hall-2', 'hall-3'],
+  ['hall-3', 'hall-4'],  ['hall-4', 'hall-5'],
+
+  // ── Lower rooms (hallway → door → interior) ──
+  ['hall-2', 'door-coffee'],    ['door-coffee', 'coffee'],
+  ['hall-3', 'door-lounge'],    ['hall-4', 'door-lounge'],
+  ['door-lounge', 'water-cooler'],
+  ['hall-5', 'door-server'],    ['door-server', 'server-room'],
 ];
 
 // Build adjacency map once
@@ -455,7 +500,7 @@ async function init() {
   await app.init({
     width: CANVAS_W,
     height: CANVAS_H,
-    backgroundColor: P.floor,
+    backgroundColor: 0x121215,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
     antialias: true,
@@ -508,20 +553,28 @@ async function init() {
   app.canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (viewMode === 'building') return;
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
-    const mouse = clientToCanvas(e);
-    const wx = (mouse.x - camera.x) / camera.zoom;
-    const wy = (mouse.y - camera.y) / camera.zoom;
-    cameraTarget.zoom = newZoom;
-    cameraTarget.x = mouse.x - wx * newZoom;
-    cameraTarget.y = mouse.y - wy * newZoom;
+    if (e.metaKey || e.ctrlKey) {
+      // Cmd/Ctrl + scroll = zoom
+      const delta = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 50);
+      const factor = 1 - delta * 0.0003;
+      const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+      const mouse = clientToCanvas(e);
+      const wx = (mouse.x - camera.x) / camera.zoom;
+      const wy = (mouse.y - camera.y) / camera.zoom;
+      cameraTarget.zoom = newZoom;
+      cameraTarget.x = mouse.x - wx * newZoom;
+      cameraTarget.y = mouse.y - wy * newZoom;
+    } else {
+      // Two-finger scroll = pan
+      cameraTarget.x -= e.deltaX * 0.3;
+      cameraTarget.y -= e.deltaY * 0.3;
+    }
   }, { passive: false });
 
   app.canvas.addEventListener('pointerdown', (e) => {
     if (viewMode === 'building') return;
     pointers.set(e.pointerId, clientToCanvas(e));
-    if (pointers.size === 1 && camera.zoom > 1.01) {
+    if (pointers.size === 1) {
       isPanning = true;
       panLast = clientToCanvas(e);
       app.canvas.setPointerCapture(e.pointerId);
@@ -541,7 +594,8 @@ async function init() {
       const pts = [...pointers.values()];
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
       if (lastPinchDist > 0) {
-        const factor = dist / lastPinchDist;
+        const raw = dist / lastPinchDist;
+        const factor = 1 + (raw - 1) * 2.5;
         const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
         const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
         const wx = (mid.x - camera.x) / camera.zoom;
@@ -566,7 +620,7 @@ async function init() {
     if (pointers.size < 2) lastPinchDist = 0;
     if (pointers.size === 0) {
       isPanning = false;
-      app.canvas.style.cursor = camera.zoom > 1.01 ? 'grab' : '';
+      app.canvas.style.cursor = 'grab';
     }
   };
   window.addEventListener('pointerup', endPointer);
@@ -617,9 +671,12 @@ const DOORS = [
   { room: 'phone-a',     edge: 'bottom', pos: 0.5, gap: 30 },
   { room: 'desk',        edge: 'bottom', pos: 0.25, gap: 36 },  // left corridor
   { room: 'desk',        edge: 'bottom', pos: 0.65, gap: 36 },  // right corridor
+  { room: 'desk',        edge: 'left',   pos: 0.3,  gap: 36 },  // side entrance from left corridor
+  { room: 'desk',        edge: 'right',  pos: 0.3,  gap: 36 },  // side entrance from right corridor
   { room: 'phone-b',     edge: 'bottom', pos: 0.5, gap: 30 },
   // Lower rooms connect up to hallway
   { room: 'lobby',       edge: 'top', pos: 0.7, gap: 30 },
+  { room: 'lobby',       edge: 'right', pos: 0.5, gap: 24 },    // opens to main hallway
   { room: 'lobby',       edge: 'bottom', pos: 0.5, gap: 30 },   // connects to meeting-room
   { room: 'meeting-room', edge: 'top', pos: 0.5, gap: 36 },
   { room: 'coffee',      edge: 'top', pos: 0.5, gap: 36 },
@@ -864,22 +921,77 @@ function drawFloor() {
   for (let x = 0; x < CANVAS_W; x += 40) {
     g.moveTo(x, 0).lineTo(x, CANVAS_H).stroke({ color: P.floorLine, width: 0.5, alpha: 0.15 });
   }
+
+  // Vignette — darken edges for depth
+  const VIG = 120;
+  // Top
+  g.rect(0, 0, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.15 });
+  // Bottom
+  g.rect(0, CANVAS_H - VIG, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.2 });
+  // Left
+  g.rect(0, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.1 });
+  // Right
+  g.rect(CANVAS_W - VIG, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.1 });
+
   layers.floor.addChild(g);
 }
 
 // --- Rooms ---
+const WALL_H = 8;   // Isometric wall height (pixels)
+const SHADOW_OFF = 6; // Drop shadow offset
+
 function drawRooms() {
   for (const room of ROOMS) {
     const c = new Container();
     const { x, y, w, h } = room;
     const r = 6; // corner radius
 
-    // Floor fill
+    // ── Drop shadow (offset down-right) ──
+    const shadow = new Graphics();
+    shadow.roundRect(x + SHADOW_OFF, y + SHADOW_OFF, w, h, r).fill({ color: 0x000000, alpha: 0.25 });
+    shadow.roundRect(x + 3, y + 3, w, h, r).fill({ color: 0x000000, alpha: 0.12 });
+    c.addChild(shadow);
+
+    // ── Raised wall base (3D thickness — bottom and right edges) ──
+    const wallBase = new Graphics();
+    // Bottom wall face
+    wallBase.moveTo(x + r, y + h);
+    wallBase.lineTo(x + w - r, y + h);
+    wallBase.lineTo(x + w - r, y + h + WALL_H);
+    wallBase.lineTo(x + r, y + h + WALL_H);
+    wallBase.closePath();
+    wallBase.fill({ color: 0x0a0a18, alpha: 0.5 });
+    // Right wall face
+    wallBase.moveTo(x + w, y + r);
+    wallBase.lineTo(x + w, y + h - r);
+    wallBase.lineTo(x + w + WALL_H * 0.6, y + h - r + WALL_H * 0.6);
+    wallBase.lineTo(x + w + WALL_H * 0.6, y + r + WALL_H * 0.6);
+    wallBase.closePath();
+    wallBase.fill({ color: 0x0a0a18, alpha: 0.35 });
+    c.addChild(wallBase);
+
+    // ── Floor fill with lighting gradient ──
     const bg = new Graphics();
     bg.roundRect(x, y, w, h, r).fill({ color: room.color, alpha: 0.5 });
+    // Top-left highlight (simulated light source)
+    bg.roundRect(x, y, w * 0.5, h * 0.4, r).fill({ color: 0xffffff, alpha: 0.03 });
+    // Bottom-right darkening
+    bg.roundRect(x + w * 0.4, y + h * 0.5, w * 0.6, h * 0.5, r).fill({ color: 0x000000, alpha: 0.06 });
     c.addChild(bg);
 
-    // Glass partition walls with door gaps
+    // ── Ambient occlusion — inner shadow along walls ──
+    const ao = new Graphics();
+    // Top inner shadow
+    ao.rect(x + r, y, w - 2 * r, 6).fill({ color: 0x000000, alpha: 0.1 });
+    // Left inner shadow
+    ao.rect(x, y + r, 5, h - 2 * r).fill({ color: 0x000000, alpha: 0.08 });
+    // Bottom inner shadow (darker — opposite light)
+    ao.rect(x + r, y + h - 8, w - 2 * r, 8).fill({ color: 0x000000, alpha: 0.15 });
+    // Right inner shadow
+    ao.rect(x + w - 6, y + r, 6, h - 2 * r).fill({ color: 0x000000, alpha: 0.12 });
+    c.addChild(ao);
+
+    // ── Glass partition walls with door gaps ──
     const walls = new Graphics();
     const roomDoors = DOORS_BY_ROOM[room.id] || [];
 
@@ -889,26 +1001,31 @@ function drawRooms() {
       gapsByEdge[d.edge].push(d);
     }
 
-    // Draw each wall edge as segments with gaps
-    const wallStyle = { color: P.glassBrd, width: 2, alpha: 0.6 };
+    // Main wall stroke — thicker for depth
+    const wallStyle = { color: P.glassBrd, width: 3, alpha: 0.6 };
 
-    // Top wall: left to right
+    // Top wall
     drawWallWithGaps(walls, x + r, y, x + w - r, y, gapsByEdge.top, w - 2 * r, wallStyle);
-    // Bottom wall: left to right
+    // Bottom wall
     drawWallWithGaps(walls, x + r, y + h, x + w - r, y + h, gapsByEdge.bottom, w - 2 * r, wallStyle);
-    // Left wall: top to bottom
+    // Left wall
     drawWallWithGaps(walls, x, y + r, x, y + h - r, gapsByEdge.left, h - 2 * r, wallStyle, true);
-    // Right wall: top to bottom
+    // Right wall
     drawWallWithGaps(walls, x + w, y + r, x + w, y + h - r, gapsByEdge.right, h - 2 * r, wallStyle, true);
 
-    // Corners (always drawn)
+    // Glass reflection highlight (thin bright line inside wall)
+    const reflStyle = { color: 0xffffff, width: 1, alpha: 0.08 };
+    drawWallWithGaps(walls, x + r, y + 1, x + w - r, y + 1, gapsByEdge.top, w - 2 * r, reflStyle);
+    drawWallWithGaps(walls, x + 1, y + r, x + 1, y + h - r, gapsByEdge.left, h - 2 * r, reflStyle, true);
+
+    // Corners
     walls.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5).stroke(wallStyle);
     walls.arc(x + w - r, y + r, r, Math.PI * 1.5, 0).stroke(wallStyle);
     walls.arc(x + r, y + h - r, r, Math.PI * 0.5, Math.PI).stroke(wallStyle);
     walls.arc(x + w - r, y + h - r, r, 0, Math.PI * 0.5).stroke(wallStyle);
     c.addChild(walls);
 
-    // Door indicators (subtle amber glow at openings)
+    // ── Door indicators (subtle amber glow at openings) ──
     const doorGfx = new Graphics();
     for (const d of roomDoors) {
       const halfGap = d.gap / 2;
@@ -922,9 +1039,7 @@ function drawRooms() {
       } else {
         cx = x + w; cy = y + r + (h - 2 * r) * d.pos;
       }
-      // Soft amber glow at door
       doorGfx.circle(cx, cy, halfGap * 0.6).fill({ color: P.honey, alpha: 0.08 });
-      // Small door frame marks
       if (d.edge === 'top' || d.edge === 'bottom') {
         doorGfx.rect(cx - halfGap, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
         doorGfx.rect(cx + halfGap - 3, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
@@ -935,12 +1050,13 @@ function drawRooms() {
     }
     c.addChild(doorGfx);
 
-    // Accent strip (top edge)
+    // ── Accent strip (top edge — raised look with highlight) ──
     const strip = new Graphics();
-    strip.roundRect(x, y, w, 4, 2).fill(room.accent);
+    strip.roundRect(x, y - 2, w, 5, 2).fill(room.accent);
+    strip.roundRect(x, y - 2, w, 2, 1).fill({ color: 0xffffff, alpha: 0.15 });
     c.addChild(strip);
 
-    // Room label
+    // ── Room label ──
     const label = new Text({
       text: room.label,
       style: new TextStyle({
@@ -993,12 +1109,26 @@ function drawWallWithGaps(g, x1, y1, x2, y2, doors, wallLen, style, vertical = f
 }
 
 // --- Furniture ---
+/** Draw a soft drop shadow under a rectangle */
+function drawShadow(g, x, y, w, h, r = 4, alpha = 0.2) {
+  g.roundRect(x + 4, y + 4, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.6 });
+  g.roundRect(x + 2, y + 2, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.3 });
+}
+
 function drawFurniture() {
   const g = new Graphics();
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TEAM OFFICE — 6 desks in 2 rows of 3 + standing desk
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // Ceiling light fixtures (soft overhead glow pools)
+  for (let col = 0; col < 3; col++) {
+    const lx = 355 + col * 170;
+    g.ellipse(lx, 165, 50, 25).fill({ color: 0xffffff, alpha: 0.015 });
+    g.roundRect(lx - 20, 155, 40, 4, 2).fill({ color: 0xffffff, alpha: 0.04 }); // fixture
+  }
+
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < 3; col++) {
       const dx = 290 + col * 170;
@@ -1009,6 +1139,7 @@ function drawFurniture() {
 
   // Standing desk (tall desk at end of row)
   const sdx = 830, sdy = 110;
+  drawShadow(g, sdx, sdy, 60, 50, 4, 0.15);
   g.roundRect(sdx, sdy, 60, 50, 4).fill(0xddd5c8);
   g.roundRect(sdx, sdy, 60, 50, 4).stroke({ width: 1, color: P.woodDark });
   g.roundRect(sdx + 8, sdy + 6, 44, 28, 2).fill(P.monitor);
@@ -1018,12 +1149,21 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   // CONFERENCE ROOM
   // ═══════════════════════════════════════════════════════════════════════════
+  drawShadow(g, 70, 530, 140, 60, 6, 0.2);
   g.roundRect(70, 530, 140, 60, 6).fill(P.wood);
+  g.roundRect(70, 530, 140, 3, 3).fill({ color: 0xffffff, alpha: 0.06 }); // table top edge
   g.roundRect(72, 532, 136, 56, 5).fill({ color: P.woodDark, alpha: 0.3 });
+  // Table legs (3D thickness — bottom face)
+  g.rect(74, 590, 132, 4).fill({ color: 0x000000, alpha: 0.2 });
   for (let i = 0; i < 5; i++) {
+    // Chair shadows
+    g.ellipse(80 + i * 30, 526, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
+    g.ellipse(80 + i * 30, 600, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
     g.circle(80 + i * 30, 524, 7).fill(P.wallDark);
     g.circle(80 + i * 30, 598, 7).fill(P.wallDark);
   }
+  // Whiteboard with shadow
+  drawShadow(g, 46, 480, 6, 60, 2, 0.1);
   g.roundRect(46, 480, 6, 60, 2).fill(P.white);
   g.roundRect(46, 480, 6, 60, 2).stroke({ color: P.wallDark, width: 1 });
 
@@ -1033,11 +1173,20 @@ function drawFurniture() {
   const bookColors = [0xef4444, 0x3b82f6, 0x22c55e, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xf97316];
   for (let i = 0; i < 3; i++) {
     const bx = 1030 + i * 130;
+    drawShadow(g, bx, 100, 100, 140, 4, 0.18);
+    // 3D side panel (right face of bookshelf)
+    g.moveTo(bx + 100, 100).lineTo(bx + 106, 96).lineTo(bx + 106, 236).lineTo(bx + 100, 240).closePath();
+    g.fill({ color: 0x2a1e12, alpha: 0.6 });
+    // 3D top face
+    g.moveTo(bx, 100).lineTo(bx + 6, 96).lineTo(bx + 106, 96).lineTo(bx + 100, 100).closePath();
+    g.fill({ color: 0x8b6f4e, alpha: 0.4 });
     g.roundRect(bx, 100, 100, 140, 4).fill(P.woodDark);
     g.roundRect(bx, 100, 100, 140, 4).stroke({ width: 1, color: 0x6b5545 });
     g.rect(bx + 4, 104, 92, 132).fill(0xf5f0eb);
     for (let shelf = 0; shelf < 3; shelf++) {
       g.rect(bx + 2, 104 + shelf * 44 + 40, 96, 3).fill(P.woodDark);
+      // Shelf shadow underneath
+      g.rect(bx + 4, 104 + shelf * 44 + 43, 90, 3).fill({ color: 0x000000, alpha: 0.08 });
       for (let b = 0; b < 7; b++) {
         const bh = 28 + ((b * 7 + shelf * 3 + i * 5) % 8);
         g.roundRect(bx + 8 + b * 13, 104 + shelf * 44 + (40 - bh), 10, bh, 1)
@@ -1047,14 +1196,21 @@ function drawFurniture() {
   }
 
   // Reading nook (cozy armchair)
+  g.ellipse(1070, 312, 32, 8).fill({ color: 0x000000, alpha: 0.12 }); // chair shadow
   g.roundRect(1040, 260, 60, 50, 12).fill(P.cushion);
+  g.roundRect(1040, 260, 60, 4, 6).fill({ color: 0xffffff, alpha: 0.05 }); // backrest highlight
   g.roundRect(1044, 264, 52, 42, 8).fill(0x5a7a50);
+  // Side table with lamp
+  g.ellipse(1120, 298, 18, 5).fill({ color: 0x000000, alpha: 0.1 }); // table shadow
   g.circle(1120, 280, 16).fill(P.wood);
   g.circle(1120, 280, 16).stroke({ width: 1, color: P.woodDark });
   g.rect(1118, 264, 4, 12).fill(P.wallDark);
   g.ellipse(1120, 260, 10, 6).fill(0xfef3c7);
+  // Lamp glow on table
+  g.ellipse(1120, 280, 20, 10).fill({ color: 0xfef3c7, alpha: 0.04 });
 
   // Phone booth (glass pod)
+  drawShadow(g, 1320, 100, 80, 100, 8, 0.15);
   g.roundRect(1320, 100, 80, 100, 8).fill({ color: P.glass, alpha: 0.7 });
   g.roundRect(1320, 100, 80, 100, 8).stroke({ width: 2, color: P.glassBrd });
   g.roundRect(1330, 130, 60, 20, 3).fill(P.wood);
@@ -1067,11 +1223,13 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Countertop (long L-shape)
+  drawShadow(g, 350, 500, 180, 50, 4, 0.18);
   g.roundRect(350, 500, 180, 30, 4).fill(0xe8ddd0);
   g.roundRect(350, 500, 180, 30, 4).stroke({ width: 1, color: P.woodDark });
   g.roundRect(350, 530, 180, 20, 4).fill(0x555555);
 
   // Espresso machine (commercial style)
+  drawShadow(g, 360, 480, 50, 40, 6, 0.15);
   g.roundRect(360, 480, 50, 40, 6).fill(0x444444);
   g.roundRect(360, 480, 50, 40, 6).stroke({ width: 1, color: 0x333333 });
   g.roundRect(364, 484, 42, 20, 3).fill(0x555555);
@@ -1148,10 +1306,18 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   // LOUNGE
   // ═══════════════════════════════════════════════════════════════════════════
+  drawShadow(g, 660, 530, 200, 100, 4, 0.18);
+  // L-shaped sofa with cushion depth
   g.roundRect(660, 530, 200, 20, 4).fill(P.cushion);
+  g.roundRect(660, 530, 200, 4, 2).fill({ color: 0xffffff, alpha: 0.05 }); // backrest highlight
   g.roundRect(660, 530, 20, 100, 4).fill(P.cushion);
+  g.roundRect(660, 530, 4, 100, 2).fill({ color: 0xffffff, alpha: 0.05 }); // side highlight
+  // Coffee table with shadow
+  drawShadow(g, 700, 570, 60, 35, 4, 0.12);
   g.roundRect(700, 570, 60, 35, 4).fill(P.wood);
+  g.roundRect(700, 570, 60, 3, 2).fill({ color: 0xffffff, alpha: 0.06 }); // table highlight
   drawPlant(g, 840, 510);
+  // Magazines with subtle shadows
   g.roundRect(710, 576, 15, 10, 1).fill(0xFCA5A5);
   g.roundRect(728, 578, 15, 8, 1).fill(0x93C5FD);
 
@@ -1160,9 +1326,21 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   for (let i = 0; i < 2; i++) {
     const sx = 1015 + i * 45;
+    drawShadow(g, sx, 490, 30, 120, 3, 0.2);
+    // 3D side panel (right face of rack)
+    g.moveTo(sx + 30, 490).lineTo(sx + 36, 486).lineTo(sx + 36, 606).lineTo(sx + 30, 610).closePath();
+    g.fill({ color: 0x1f2937, alpha: 0.7 });
+    // Top face
+    g.moveTo(sx, 490).lineTo(sx + 6, 486).lineTo(sx + 36, 486).lineTo(sx + 30, 490).closePath();
+    g.fill({ color: 0x4b5563, alpha: 0.5 });
     g.roundRect(sx, 490, 30, 120, 3).fill(0x374151);
+    // Rack front highlight
+    g.roundRect(sx, 490, 30, 2, 1).fill({ color: 0xffffff, alpha: 0.05 });
     for (let j = 0; j < 6; j++) {
+      // LED glow halos
+      g.circle(sx + 8, 500 + j * 18, 4).fill({ color: P.led, alpha: 0.08 });
       g.circle(sx + 8, 500 + j * 18, 2).fill(P.led);
+      g.circle(sx + 22, 500 + j * 18, 4).fill({ color: j % 3 === 0 ? P.ledRed : P.led, alpha: 0.08 });
       g.circle(sx + 22, 500 + j * 18, 2).fill(j % 3 === 0 ? P.ledRed : P.led);
     }
   }
@@ -1172,7 +1350,9 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   drawPhoneBooth(g, 55, 65);
   drawPhoneBooth(g, 1075, 65);
+  drawShadow(g, 80, 415, 120, 20, 4, 0.15);
   g.roundRect(80, 415, 120, 20, 4).fill(P.wood);
+  g.roundRect(80, 415, 120, 2, 1).fill({ color: 0xffffff, alpha: 0.06 }); // top edge highlight
   g.roundRect(82, 417, 30, 16, 3).fill(P.monitor);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1189,27 +1369,41 @@ function drawFurniture() {
 }
 
 function drawDesk(g, x, y) {
-  // Desk surface
+  // Drop shadow
+  drawShadow(g, x, y, 130, 55, 4, 0.15);
+  // Desk surface with subtle bevel
   g.roundRect(x, y, 130, 55, 4).fill(P.wood);
+  g.roundRect(x, y, 130, 3, 2).fill({ color: 0xffffff, alpha: 0.06 }); // top edge highlight
   g.roundRect(x + 2, y + 2, 126, 51, 3).fill({ color: P.woodDark, alpha: 0.15 });
-  // Monitor
+  // Monitor with ambient glow
+  g.roundRect(x + 33, y + 3, 64, 39, 4).fill({ color: P.monGlow, alpha: 0.06 }); // glow halo
   g.roundRect(x + 35, y + 5, 60, 35, 3).fill(P.monitor);
   g.roundRect(x + 38, y + 8, 54, 26, 2).fill({ color: P.monGlow, alpha: 0.15 });
+  // Screen bezel highlight
+  g.roundRect(x + 35, y + 5, 60, 2, 1).fill({ color: 0xffffff, alpha: 0.08 });
   // Monitor stand
   g.roundRect(x + 60, y + 40, 10, 8, 1).fill(P.wallDark);
   // Keyboard
   g.roundRect(x + 30, y + 42, 50, 8, 2).fill(0xD1D5DB);
-  // Chair
+  g.roundRect(x + 30, y + 42, 50, 2, 1).fill({ color: 0xffffff, alpha: 0.1 }); // key highlight
+  // Chair with shadow
+  g.ellipse(x + 65, y + 72, 14, 6).fill({ color: 0x000000, alpha: 0.15 }); // chair shadow
   g.circle(x + 65, y + 70, 12).fill(P.wallDark);
+  g.circle(x + 65, y + 68, 10).fill({ color: 0xffffff, alpha: 0.03 }); // subtle seat highlight
 }
 
 function drawPhoneBooth(g, x, y) {
+  drawShadow(g, x, y, 45, 25, 3, 0.12);
   g.roundRect(x, y, 45, 25, 3).fill(P.wood);
+  g.roundRect(x, y, 45, 2, 1).fill({ color: 0xffffff, alpha: 0.06 });
   g.roundRect(x + 10, y + 3, 25, 15, 2).fill(P.monitor);
+  g.roundRect(x + 11, y + 4, 23, 12, 1).fill({ color: P.monGlow, alpha: 0.1 });
 }
 
 function drawPlant(g, x, y, size = 1, potColor) {
   const s = size;
+  // Shadow
+  g.ellipse(x, y + 15 * s, 10 * s, 4 * s).fill({ color: 0x000000, alpha: 0.15 });
   // Pot (tapered trapezoid)
   g.moveTo(x - 8 * s, y);
   g.lineTo(x - 6 * s, y + 14 * s);
@@ -1217,6 +1411,13 @@ function drawPlant(g, x, y, size = 1, potColor) {
   g.lineTo(x + 8 * s, y);
   g.closePath();
   g.fill(potColor || P.planter);
+  // Pot highlight (left edge light)
+  g.moveTo(x - 8 * s, y);
+  g.lineTo(x - 6 * s, y + 14 * s);
+  g.lineTo(x - 4 * s, y + 14 * s);
+  g.lineTo(x - 6 * s, y);
+  g.closePath();
+  g.fill({ color: 0xffffff, alpha: 0.06 });
   // Soil
   g.ellipse(x, y + 1, 7 * s, 2 * s).fill(0x78716c);
   // Trunk
@@ -1241,9 +1442,14 @@ function createElevator() {
   // ── Static shaft ──
   const shaft = new Graphics();
 
+  // Shaft shadow
+  shaft.roundRect(sx + 5, sy + 5, sw, sh, 4).fill({ color: 0x000000, alpha: 0.2 });
   // Shaft background
   shaft.roundRect(sx, sy, sw, sh, 4).fill({ color: P.wall, alpha: 0.35 });
-  shaft.roundRect(sx, sy, sw, sh, 4).stroke({ color: P.wallDark, width: 1.5 });
+  shaft.roundRect(sx, sy, sw, sh, 4).stroke({ color: P.wallDark, width: 2 });
+  // 3D right edge
+  shaft.moveTo(sx + sw, sy + 4).lineTo(sx + sw + 4, sy).lineTo(sx + sw + 4, sy + sh - 4).lineTo(sx + sw, sy + sh).closePath();
+  shaft.fill({ color: 0x0a0a18, alpha: 0.3 });
 
   // Guide rails
   shaft.moveTo(sx + 4, sy + 4).lineTo(sx + 4, sy + sh - 4).stroke({ color: P.wallDark, width: 1, alpha: 0.25 });
@@ -1495,12 +1701,31 @@ function createBeeGraphics(bee) {
   const s = scale;
   const beeColor = hexToNum(bee.color) || 0xF59E0B;
 
-  // Ground shadow
+  // Ground shadow (drawn at origin, positioned via y)
   const shadow = new Graphics();
-  shadow.ellipse(0, 30, 20 * s, 7 * s).fill({ color: 0x000000, alpha: 0.08 });
+  shadow.ellipse(0, 0, 18 * s, 5 * s).fill({ color: 0x000000, alpha: 0.12 });
+  shadow.y = 36 * s;
   c.addChild(shadow);
+  c._shadow = shadow;
 
-  // Wings — iridescent, translucent
+  // Legs — two separate Graphics for walking animation
+  const legL = new Graphics();
+  legL.moveTo(0, 0).lineTo(-3 * s, 10 * s).lineTo(-5 * s, 18 * s).stroke({ color: 0x78716c, width: 2.5 * s, cap: 'round' });
+  legL.circle(-5 * s, 18 * s, 2.5 * s).fill(0x78716c); // foot
+  legL.x = -6 * s;
+  legL.y = 18 * s;
+  c.addChild(legL);
+  c._legL = legL;
+
+  const legR = new Graphics();
+  legR.moveTo(0, 0).lineTo(3 * s, 10 * s).lineTo(5 * s, 18 * s).stroke({ color: 0x78716c, width: 2.5 * s, cap: 'round' });
+  legR.circle(5 * s, 18 * s, 2.5 * s).fill(0x78716c); // foot
+  legR.x = 6 * s;
+  legR.y = 18 * s;
+  c.addChild(legR);
+  c._legR = legR;
+
+  // Wings — iridescent, translucent (folded back when idle, spread when flying)
   const wingL = new Graphics();
   wingL.ellipse(-8, -6, 20 * s, 13 * s).fill({ color: 0xdbeafe, alpha: 0.4 });
   wingL.ellipse(-8, -6, 20 * s, 13 * s).stroke({ width: 1, color: 0x93c5fd, alpha: 0.3 });
@@ -1519,6 +1744,9 @@ function createBeeGraphics(bee) {
   c.addChild(wingR);
   c._wingR = wingR;
 
+  // Body container (for walk bounce separate from position)
+  const bodyC = new Container();
+
   // Body
   const body = new Graphics();
 
@@ -1532,9 +1760,6 @@ function createBeeGraphics(bee) {
   body.ellipse(-7 * s, -8 * s, 10 * s, 12 * s).fill({ color: 0xffffff, alpha: 0.12 });
   // Stinger
   body.moveTo(0, 22 * s).lineTo(-3 * s, 28 * s).lineTo(3 * s, 28 * s).closePath().fill(0x78716c);
-  // Tiny feet
-  body.circle(-8 * s, 24 * s, 3 * s).fill(0x78716c);
-  body.circle(8 * s, 24 * s, 3 * s).fill(0x78716c);
 
   // Big round head
   body.circle(0, -24 * s, 17 * s).fill(0xfef9c3);
@@ -1549,17 +1774,19 @@ function createBeeGraphics(bee) {
   body.circle(12 * s, -57 * s, 3 * s).fill(beeColor);
   body.circle(8 * s, -57 * s, 3 * s).fill(beeColor);
 
-  c.addChild(body);
+  bodyC.addChild(body);
+  c.addChild(bodyC);
+  c._bodyC = bodyC;
 
   // Face (separate Graphics for dynamic expressions)
   const face = new Graphics();
   drawBeeFace(face, s, 'neutral', 0, 0);
-  c.addChild(face);
+  bodyC.addChild(face);
   c._face = face;
   c._beeScale = s;
 
   // Role-specific accessories
-  drawAccessory(c, bee, s, beeColor);
+  drawAccessory(bodyC, bee, s, beeColor);
 
   // Name label
   const label = new Text({
@@ -1573,7 +1800,7 @@ function createBeeGraphics(bee) {
     }),
   });
   label.anchor.set(0.5, 0);
-  label.y = 34 * s;
+  label.y = 40 * s;
   c.addChild(label);
   c._label = label;
 
@@ -1889,7 +2116,8 @@ function updatePlayerBee() {
   if (keysDown.has('s') || keysDown.has('ArrowDown')) dy = 1;
   if (keysDown.has('a') || keysDown.has('ArrowLeft')) dx = -1;
   if (keysDown.has('d') || keysDown.has('ArrowRight')) dx = 1;
-  if (dx || dy) {
+  const isMoving = !!(dx || dy);
+  if (isMoving) {
     const len = Math.sqrt(dx * dx + dy * dy);
     playerBee.drawX += (dx / len) * PLAYER_SPEED;
     playerBee.drawY += (dy / len) * PLAYER_SPEED;
@@ -1897,20 +2125,14 @@ function updatePlayerBee() {
     playerBee.drawY = clamp(playerBee.drawY, 20, CANVAS_H - 20);
     playerBee.gfx.x = playerBee.drawX;
     playerBee.gfx.y = playerBee.drawY;
+    playerBee.targetX = playerBee.drawX + dx; // for lean direction
     if (Math.abs(dx) > Math.abs(dy)) {
       playerBee._facing = dx > 0 ? 'right' : 'left';
     } else {
       playerBee._facing = dy > 0 ? 'down' : 'up';
     }
   }
-  // Wing animation
-  playerBee.wingPhase += 0.2;
-  if (playerBee.gfx._wingL) {
-    playerBee.gfx._wingL.rotation = Math.sin(playerBee.wingPhase) * 0.35;
-    playerBee.gfx._wingR.rotation = -Math.sin(playerBee.wingPhase) * 0.35;
-  }
-  // Idle bob
-  playerBee.gfx.y += Math.sin(frame * 0.05 + playerBee.wingPhase) * 1.5;
+  animateBee(playerBee, isMoving);
   // Update room
   playerBee.room = findRoomAtPosition(playerBee.drawX, playerBee.drawY) || playerBee.room;
 }
@@ -1926,6 +2148,8 @@ function updateAmbientBee(bee) {
       bee.targetY = room.y + room.h * (0.25 + Math.random() * 0.5);
     }
   }
+
+  const prevX = bee.drawX, prevY = bee.drawY;
 
   // Path following (inter-room) or direct lerp (intra-room)
   if (bee.path && bee.pathIndex < bee.path.length) {
@@ -1947,15 +2171,9 @@ function updateAmbientBee(bee) {
   bee.gfx.x = bee.drawX;
   bee.gfx.y = bee.drawY;
 
-  // Wing animation
-  bee.wingPhase += 0.15;
-  if (bee.gfx._wingL) {
-    bee.gfx._wingL.rotation = Math.sin(bee.wingPhase) * 0.3;
-    bee.gfx._wingR.rotation = -Math.sin(bee.wingPhase) * 0.3;
-  }
-
-  // Idle bob
-  bee.gfx.y += Math.sin(frame * 0.04 + bee.wingPhase) * 1.5;
+  // Detect movement and animate
+  const moved = Math.abs(bee.drawX - prevX) + Math.abs(bee.drawY - prevY);
+  animateBee(bee, moved > 0.2);
 }
 
 // --- Sync backend bees ---
@@ -2155,10 +2373,79 @@ function moveAmbientTo(bee, roomId) {
 }
 
 // --- Animation ---
+
+/** Animate a bee's body, legs, and wings based on movement state */
+function animateBee(bee, isMoving) {
+  const gfx = bee.gfx;
+  if (!gfx) return;
+
+  bee.wingPhase = (bee.wingPhase || 0) + (isMoving ? 0.25 : 0.06);
+  bee._walkCycle = (bee._walkCycle || 0) + (isMoving ? 0.18 : 0);
+  const wc = bee._walkCycle;
+  const s = gfx._beeScale || 1;
+
+  if (isMoving) {
+    // ── Walking ──
+    // Legs alternate swing
+    if (gfx._legL) {
+      gfx._legL.rotation = Math.sin(wc) * 0.5;
+      gfx._legR.rotation = Math.sin(wc + Math.PI) * 0.5;
+    }
+    // Body bounce (hop up on each step)
+    if (gfx._bodyC) {
+      gfx._bodyC.y = -Math.abs(Math.sin(wc)) * 3 * s;
+    }
+    // Slight body lean in direction of movement
+    const dx = bee.targetX - bee.drawX;
+    const lean = clamp(dx * 0.002, -0.08, 0.08);
+    if (gfx._bodyC) gfx._bodyC.rotation = lean;
+    // Wings fold back (small gentle flutter, not full flap)
+    if (gfx._wingL) {
+      gfx._wingL.rotation = -0.3 + Math.sin(bee.wingPhase) * 0.08;
+      gfx._wingR.rotation = 0.3 - Math.sin(bee.wingPhase) * 0.08;
+      gfx._wingL.alpha = 0.5;
+      gfx._wingR.alpha = 0.5;
+    }
+    // Shadow stays on ground, grows slightly during hop
+    if (gfx._shadow) {
+      gfx._shadow.y = 36 * s;
+      const hopFactor = Math.abs(Math.sin(wc));
+      gfx._shadow.scale.set(1 - hopFactor * 0.1, 1 - hopFactor * 0.15);
+      gfx._shadow.alpha = 0.12 - hopFactor * 0.03;
+    }
+  } else {
+    // ── Idle ──
+    // Legs at rest
+    if (gfx._legL) {
+      gfx._legL.rotation = 0;
+      gfx._legR.rotation = 0;
+    }
+    // Gentle breathing — subtle Y sway
+    if (gfx._bodyC) {
+      gfx._bodyC.y = Math.sin(frame * 0.03 + (bee.wingPhase || 0)) * 1.2 * s;
+      gfx._bodyC.rotation *= 0.9; // ease back to upright
+    }
+    // Wings rest, very slow idle flutter
+    if (gfx._wingL) {
+      gfx._wingL.rotation = -0.15 + Math.sin(bee.wingPhase) * 0.05;
+      gfx._wingR.rotation = 0.15 - Math.sin(bee.wingPhase) * 0.05;
+      gfx._wingL.alpha = 0.65;
+      gfx._wingR.alpha = 0.65;
+    }
+    // Shadow at rest
+    if (gfx._shadow) {
+      gfx._shadow.y = 36 * s;
+      gfx._shadow.scale.set(1, 1);
+      gfx._shadow.alpha = 0.12;
+    }
+  }
+}
+
 function updateAllBees() {
   // Backend bees
   for (const bee of Object.values(localBees)) {
     const speed = bee.activity === 'arriving' ? 0.12 : 0.06;
+    const prevX = bee.drawX, prevY = bee.drawY;
 
     // Path following (inter-room) or direct lerp (intra-room)
     if (bee.path && bee.pathIndex < bee.path.length) {
@@ -2180,15 +2467,9 @@ function updateAllBees() {
     bee.gfx.x = bee.drawX;
     bee.gfx.y = bee.drawY;
 
-    // Wings
-    bee.wingPhase = (bee.wingPhase || 0) + 0.2;
-    if (bee.gfx._wingL) {
-      bee.gfx._wingL.rotation = Math.sin(bee.wingPhase) * 0.35;
-      bee.gfx._wingR.rotation = -Math.sin(bee.wingPhase) * 0.35;
-    }
-
-    // Idle bob
-    bee.gfx.y += Math.sin(frame * 0.05 + (bee.wingPhase || 0)) * 1.5;
+    // Detect movement
+    const moved = Math.abs(bee.drawX - prevX) + Math.abs(bee.drawY - prevY);
+    animateBee(bee, moved > 0.3);
   }
 
   // Ambient bees
@@ -2398,13 +2679,14 @@ function updateCamera() {
   camera.zoom += (cameraTarget.zoom - camera.zoom) * CAM_LERP;
   camera.x += (cameraTarget.x - camera.x) * CAM_LERP;
   camera.y += (cameraTarget.y - camera.y) * CAM_LERP;
-  if (Math.abs(camera.zoom - 1) < 0.005 && Math.abs(camera.x) < 0.5 && Math.abs(camera.y) < 0.5) {
-    camera.zoom = 1; camera.x = 0; camera.y = 0;
-  }
+  // Snap zoom to 1 when very close, but only snap position if target is also origin
+  if (Math.abs(camera.zoom - 1) < 0.005) camera.zoom = 1;
+  if (Math.abs(cameraTarget.x) < 0.5 && Math.abs(camera.x) < 0.5) camera.x = 0;
+  if (Math.abs(cameraTarget.y) < 0.5 && Math.abs(camera.y) < 0.5) camera.y = 0;
   layers.camera.scale.set(camera.zoom);
   layers.camera.position.set(camera.x, camera.y);
   if (!isPanning) {
-    app.canvas.style.cursor = camera.zoom > 1.01 ? 'grab' : '';
+    app.canvas.style.cursor = 'grab';
   }
 }
 
@@ -2561,7 +2843,9 @@ function exitBuildingView(selectedProject) {
       t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));
     });
     lastTerminalKey = '';
+    lastTerminalCount = 0;
     lastEventLogKey = '';
+    lastEventLogCount = 0;
   }
 }
 
@@ -2808,6 +3092,7 @@ function renderSessionCards(container, sessions) {
     container.querySelectorAll('.session-card').forEach(c => c.classList.remove('active'));
     liveCard.classList.add('active');
     lastEventLogKey = ''; // force re-render
+    lastEventLogCount = 0;
   });
   container.appendChild(liveCard);
 
@@ -2877,6 +3162,8 @@ function renderPastSession(session) {
 }
 
 // --- Event Log ---
+let lastEventLogCount = 0;
+
 function renderEventLog(entries) {
   const log = document.getElementById('event-log');
   if (!log) return;
@@ -2889,29 +3176,50 @@ function renderEventLog(entries) {
   if (key === lastEventLogKey) return;
   lastEventLogKey = key;
 
-  log.innerHTML = '';
+  // Event log shows newest first — if the list changed, we prepend new entries
+  // Since entries are newest-first, new entries appear at index 0
+  const newCount = toRender.length;
 
-  for (const entry of toRender) {
-    const el = document.createElement('div');
-    el.className = 'log-entry';
-
-    const time = new Date(entry.timestamp);
-    const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    el.innerHTML = `
-      <span class="log-icon">${entry.icon}</span>
-      <div>
-        <span class="log-detail">${escapeHtml(entry.detail)}</span>
-        <span class="log-time">${timeStr}</span>
-      </div>
-    `;
-    log.appendChild(el);
+  // If entries shrank or structure changed, full rebuild
+  if (newCount < lastEventLogCount || lastEventLogCount === 0) {
+    log.innerHTML = '';
+    lastEventLogCount = 0;
   }
+
+  // How many new entries were added (at the front of the array)
+  const added = newCount - lastEventLogCount;
+  if (added > 0) {
+    const fragment = document.createDocumentFragment();
+    for (let i = added - 1; i >= 0; i--) {
+      const entry = toRender[i];
+      const el = document.createElement('div');
+      el.className = 'log-entry';
+      const time = new Date(entry.timestamp);
+      const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      el.innerHTML = `
+        <span class="log-icon">${entry.icon}</span>
+        <div>
+          <span class="log-detail">${escapeHtml(entry.detail)}</span>
+          <span class="log-time">${timeStr}</span>
+        </div>
+      `;
+      fragment.appendChild(el);
+    }
+    log.insertBefore(fragment, log.firstChild);
+
+    // Trim excess nodes from the bottom
+    while (log.childNodes.length > 30) {
+      log.removeChild(log.lastChild);
+    }
+  }
+
+  lastEventLogCount = newCount;
 }
 
 // --- Terminal / Response Feed ---
 const MAX_TERMINAL_ENTRIES = 100;
 let lastTerminalKey = '';
+let lastTerminalCount = 0;  // Track how many entries are rendered for incremental append
 
 /** Format relative time (e.g., "just now", "2m ago", "1h ago") */
 function relativeTime(timestamp) {
@@ -2925,16 +3233,41 @@ function relativeTime(timestamp) {
 
 /** Determine role from terminal entry event */
 function entryRole(entry) {
+  if (entry.role) return entry.role;  // Use explicit role if set
   if (entry.event === 'UserPromptSubmit') return 'user';
   if (entry.event === 'Stop') return 'claude';
   if (entry.event === 'Error' || entry.event === 'PostToolUseFailure') return 'error';
   return 'tool';
 }
 
-/** Render terminal from state.terminalLog (persists across reconnects) */
+const CHANNEL_LABELS = {
+  user:   'You',
+  claude: 'Bee',
+  tool:   'Tool',
+  error:  'Err',
+};
+
+/** Create a single terminal entry DOM element — WoW chat line */
+function createTerminalEntry(entry) {
+  const role = entryRole(entry);
+  const el = document.createElement('div');
+  el.className = `term-entry role-${role}`;
+  el.dataset.ts = entry.timestamp;
+
+  const channel = CHANNEL_LABELS[role] || 'Tool';
+  const content = entry.content || '';
+  const relTime = relativeTime(entry.timestamp);
+  const projectTag = entry.project
+    ? `<span class="term-project-tag">${escapeHtml(shortProjectName(entry.project))}</span>`
+    : '';
+
+  el.innerHTML = `<span class="term-channel">[${escapeHtml(channel)}]</span> <span class="term-text">${escapeHtml(content)}</span><span class="term-time">${relTime}</span>${projectTag}`;
+  return el;
+}
+
+/** Render terminal from state.terminalLog — incremental append for new entries */
 function renderTerminalFromState(entries) {
   if (!entries) return;
-  // Fingerprint: count + last entry timestamp to detect real changes
   const key = entries.length + ':' + (entries[entries.length - 1]?.timestamp || '');
   if (key === lastTerminalKey) return;
   lastTerminalKey = key;
@@ -2942,60 +3275,59 @@ function renderTerminalFromState(entries) {
   const terminal = document.getElementById('terminal-output');
   if (!terminal) return;
 
-  terminal.innerHTML = '';
+  // If entries shrank or got replaced, do a full rebuild
+  if (entries.length < lastTerminalCount || lastTerminalCount === 0) {
+    terminal.innerHTML = '';
+    lastTerminalCount = 0;
+  }
 
+  // Append only new entries (those after lastTerminalCount)
+  const startIdx = lastTerminalCount;
   let lastDateStr = '';
 
-  for (const entry of entries) {
-    // Date separator
+  // Get the last date separator from existing content
+  if (startIdx > 0 && entries.length > 0) {
+    const prevEntry = entries[startIdx - 1];
+    if (prevEntry) lastDateStr = new Date(prevEntry.timestamp).toLocaleDateString();
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (let i = startIdx; i < entries.length; i++) {
+    const entry = entries[i];
     const dateStr = new Date(entry.timestamp).toLocaleDateString();
     if (dateStr !== lastDateStr) {
       lastDateStr = dateStr;
       const sep = document.createElement('div');
       sep.className = 'term-session-sep';
       sep.textContent = dateStr;
-      terminal.appendChild(sep);
+      fragment.appendChild(sep);
     }
-
-    const role = entryRole(entry);
-    const el = document.createElement('div');
-    el.className = `term-entry role-${role}`;
-
-    const roleConfig = {
-      user:   { icon: '>', badge: 'user', label: 'YOU' },
-      claude: { icon: '\uD83D\uDC1D', badge: 'stop', label: 'BEE' },
-      tool:   { icon: '\u2699', badge: 'tool', label: 'TOOL' },
-      error:  { icon: '\u26A0', badge: 'error', label: 'ERR' },
-    };
-    const rc = roleConfig[role] || roleConfig.tool;
-
-    const relTime = relativeTime(entry.timestamp);
-    const content = entry.content || '';
-
-    const projectTag = entry.project
-      ? `<span class="term-project-tag">${escapeHtml(shortProjectName(entry.project))}</span>`
-      : '';
-
-    el.innerHTML = `
-      <div class="term-prompt">
-        <span class="term-role-icon">${rc.icon}</span>
-        <span class="term-badge ${rc.badge}">${escapeHtml(rc.label)}</span>
-        ${projectTag}
-        <span class="term-relative-time">${relTime}</span>
-      </div>
-      <div class="term-content">${escapeHtml(content)}</div>
-    `;
-
-    terminal.appendChild(el);
+    fragment.appendChild(createTerminalEntry(entry));
   }
 
-  terminal.scrollTop = terminal.scrollHeight;
+  if (fragment.childNodes.length > 0) {
+    terminal.appendChild(fragment);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  lastTerminalCount = entries.length;
+
+  // Trim excess DOM nodes if terminal grew too large
+  const maxNodes = 600;
+  while (terminal.childNodes.length > maxNodes) {
+    terminal.removeChild(terminal.firstChild);
+  }
 }
 
-// Update relative timestamps every 30s
+// Update relative timestamps every 30s (in-place, no DOM rebuild)
 setInterval(() => {
-  const times = document.querySelectorAll('.term-relative-time');
-  // Re-render would be heavy; we just rely on the next state broadcast to update fingerprint
+  const terminal = document.getElementById('terminal-output');
+  if (!terminal) return;
+  terminal.querySelectorAll('.term-entry').forEach(entry => {
+    const ts = entry.dataset.ts;
+    const timeEl = entry.querySelector('.term-time');
+    if (ts && timeEl) timeEl.textContent = relativeTime(ts);
+  });
 }, 30000);
 
 /** Handle real-time response messages (also flashes terminal tab) */
@@ -3024,131 +3356,32 @@ function handleResponse(payload) {
 
   // Force re-render on next state (the state broadcast will follow shortly)
   lastTerminalKey = '';
+  lastTerminalCount = 0;
 }
 
-// --- Floating Terminal Window ---
-const TERM_STORAGE_KEY = 'beehaven-term-window';
+// --- WoW Chat Window ---
 
-function loadTermWindowState() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(TERM_STORAGE_KEY));
-    if (saved) Object.assign(termWindow, saved);
-  } catch {}
-}
-
-function saveTermWindowState() {
-  localStorage.setItem(TERM_STORAGE_KEY, JSON.stringify({
-    x: termWindow.x, y: termWindow.y,
-    width: termWindow.width, height: termWindow.height,
-    minimized: termWindow.minimized, visible: termWindow.visible,
-  }));
-}
-
-function applyTermWindowPosition() {
+function applyTermPosition() {
   const win = document.getElementById('terminal-window');
   if (!win) return;
-  win.style.left = termWindow.x + 'px';
-  win.style.top = termWindow.y + 'px';
-  win.style.width = termWindow.width + 'px';
-  win.style.height = termWindow.height + 'px';
+  // Remove all position classes, apply current
+  for (const pos of TERM_POSITIONS) win.classList.remove(pos);
+  win.classList.add(termPosition);
 }
 
-function toggleMaximize() {
-  if (termWindow.maximized) {
-    if (termPreMaximize) Object.assign(termWindow, termPreMaximize);
-    termWindow.maximized = false;
-  } else {
-    termPreMaximize = { x: termWindow.x, y: termWindow.y, width: termWindow.width, height: termWindow.height };
-    termWindow.x = 0;
-    termWindow.y = 0;
-    termWindow.width = window.innerWidth;
-    termWindow.height = window.innerHeight;
-    termWindow.maximized = true;
-  }
-  applyTermWindowPosition();
-  saveTermWindowState();
-}
-
-function onTermDragStart(e) {
-  if (e.target.closest('.term-window-btn')) return;
-  termDragging = true;
-  const win = document.getElementById('terminal-window');
-  termDragOffset.x = e.clientX - win.offsetLeft;
-  termDragOffset.y = e.clientY - win.offsetTop;
-  e.preventDefault();
-}
-
-function onTermResizeStart(e, dir) {
-  termResizing = true;
-  termResizeDir = dir;
-  termDragOffset.x = e.clientX;
-  termDragOffset.y = e.clientY;
-  e.preventDefault();
-  e.stopPropagation();
-}
-
-function onTermDragResizeMove(e) {
-  const win = document.getElementById('terminal-window');
-  if (!win) return;
-
-  if (termDragging) {
-    let nx = e.clientX - termDragOffset.x;
-    let ny = e.clientY - termDragOffset.y;
-    const snap = 12;
-    const maxX = window.innerWidth - win.offsetWidth;
-    const minY = 0;
-    if (nx < snap) nx = 0;
-    if (ny < minY + snap) ny = minY;
-    if (nx > maxX - snap) nx = Math.max(0, maxX);
-    if (ny > window.innerHeight - 36) ny = window.innerHeight - 36;
-    termWindow.x = nx;
-    termWindow.y = ny;
-    win.style.left = nx + 'px';
-    win.style.top = ny + 'px';
-    if (termWindow.maximized) { termWindow.maximized = false; }
-    return;
-  }
-
-  if (termResizing) {
-    const dx = e.clientX - termDragOffset.x;
-    const dy = e.clientY - termDragOffset.y;
-    termDragOffset.x = e.clientX;
-    termDragOffset.y = e.clientY;
-    const minW = 320, minH = 200;
-
-    if (termResizeDir.includes('e')) termWindow.width = Math.max(minW, termWindow.width + dx);
-    if (termResizeDir.includes('w')) {
-      const nw = Math.max(minW, termWindow.width - dx);
-      if (nw !== termWindow.width) { termWindow.x += termWindow.width - nw; termWindow.width = nw; }
-    }
-    if (termResizeDir.includes('s')) termWindow.height = Math.max(minH, termWindow.height + dy);
-    if (termResizeDir.includes('n')) {
-      const nh = Math.max(minH, termWindow.height - dy);
-      if (nh !== termWindow.height) { termWindow.y += termWindow.height - nh; termWindow.height = nh; }
-    }
-    applyTermWindowPosition();
-    if (termWindow.maximized) { termWindow.maximized = false; }
-  }
-}
-
-function onTermDragResizeEnd() {
-  if (termDragging || termResizing) {
-    termDragging = false;
-    termResizing = false;
-    saveTermWindowState();
-  }
+function cycleTermPosition() {
+  const idx = TERM_POSITIONS.indexOf(termPosition);
+  termPosition = TERM_POSITIONS[(idx + 1) % TERM_POSITIONS.length];
+  localStorage.setItem(TERM_POSITION_KEY, termPosition);
+  applyTermPosition();
 }
 
 function initTerminalWindow() {
-  loadTermWindowState();
   const win = document.getElementById('terminal-window');
   if (!win) return;
 
-  // Default Y: bottom of viewport
-  if (termWindow.y === null) {
-    termWindow.y = window.innerHeight - termWindow.height - 16;
-  }
-  applyTermWindowPosition();
+  // Apply saved position
+  applyTermPosition();
 
   // Tabs
   const tabs = win.querySelectorAll('.term-window-tab');
@@ -3163,69 +3396,28 @@ function initTerminalWindow() {
     });
   });
 
-  // Title bar drag
-  const titlebar = win.querySelector('.term-window-titlebar');
-  titlebar.addEventListener('mousedown', onTermDragStart);
-  titlebar.addEventListener('dblclick', toggleMaximize);
+  // Position cycle button
+  const posBtn = win.querySelector('#btn-term-position');
+  if (posBtn) posBtn.addEventListener('click', cycleTermPosition);
 
-  // Touch drag
-  titlebar.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.term-window-btn')) return;
-    termDragging = true;
-    termDragOffset.x = e.touches[0].clientX - win.offsetLeft;
-    termDragOffset.y = e.touches[0].clientY - win.offsetTop;
-  }, { passive: true });
-
-  // Window controls
-  win.querySelector('.term-window-close').addEventListener('click', () => {
-    termWindow.visible = false;
-    win.classList.add('hidden');
-    saveTermWindowState();
-  });
-  win.querySelector('.term-window-minimize').addEventListener('click', () => {
-    termWindow.minimized = !termWindow.minimized;
-    win.classList.toggle('minimized', termWindow.minimized);
-    saveTermWindowState();
-  });
-  win.querySelector('.term-window-maximize').addEventListener('click', toggleMaximize);
-
-  // Resize handles
-  win.querySelectorAll('.term-resize').forEach(handle => {
-    const cls = Array.from(handle.classList);
-    const dir = cls.find(c => c.startsWith('term-resize-') && c !== 'term-resize')?.replace('term-resize-', '');
-    if (dir) {
-      handle.addEventListener('mousedown', (e) => onTermResizeStart(e, dir));
-      handle.addEventListener('touchstart', (e) => {
-        termResizing = true;
-        termResizeDir = dir;
-        termDragOffset.x = e.touches[0].clientX;
-        termDragOffset.y = e.touches[0].clientY;
-        e.stopPropagation();
-      }, { passive: true });
-    }
-  });
-
-  // Global move/end
-  document.addEventListener('mousemove', onTermDragResizeMove);
-  document.addEventListener('mouseup', onTermDragResizeEnd);
-  document.addEventListener('touchmove', (e) => {
-    if (!termDragging && !termResizing) return;
-    onTermDragResizeMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, preventDefault() {} });
-  }, { passive: true });
-  document.addEventListener('touchend', onTermDragResizeEnd);
-
-  // Window resize clamp
-  window.addEventListener('resize', () => {
-    const maxX = window.innerWidth - termWindow.width;
-    const maxY = window.innerHeight - 36;
-    if (termWindow.x > maxX) termWindow.x = Math.max(0, maxX);
-    if (termWindow.y > maxY) termWindow.y = Math.max(0, maxY);
-    applyTermWindowPosition();
-  });
-
-  // Apply initial state
-  if (!termWindow.visible) win.classList.add('hidden');
-  if (termWindow.minimized) win.classList.add('minimized');
+  // Chat input
+  const input = document.getElementById('terminal-input');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        const text = input.value.trim();
+        input.value = '';
+        // Send via WebSocket
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'user-input',
+            text,
+            project: projectFilter || undefined,
+          }));
+        }
+      }
+    });
+  }
 }
 
 // --- Shop Popover ---
@@ -3510,13 +3702,7 @@ function bindUI() {
     if ((e.metaKey || e.ctrlKey) && e.key === '`') {
       e.preventDefault();
       const win = document.getElementById('terminal-window');
-      termWindow.visible = !termWindow.visible;
-      win.classList.toggle('hidden', !termWindow.visible);
-      if (termWindow.visible && termWindow.minimized) {
-        termWindow.minimized = false;
-        win.classList.remove('minimized');
-      }
-      saveTermWindowState();
+      if (win) win.classList.toggle('hidden');
     }
     if (e.key === 'Escape' && shopOpen) toggleShop();
   });
@@ -3542,9 +3728,22 @@ function shortProjectName(fullPath) {
   return fullPath.split('/').filter(Boolean).pop() || fullPath;
 }
 
+let lastProjectTabsKey = '';
 function updateProjectTabs(projects) {
   const container = document.getElementById('project-tabs');
   if (!container) return;
+
+  // Only rebuild DOM when the project list actually changes
+  const key = projects.join(',');
+  if (key === lastProjectTabsKey) {
+    // Just update active states without destroying elements
+    container.querySelectorAll('.project-tab').forEach(t => {
+      t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));
+    });
+    return;
+  }
+  lastProjectTabsKey = key;
+
   container.innerHTML = '';
 
   // "All" tab
@@ -3569,7 +3768,9 @@ function updateProjectTabs(projects) {
 function setProjectFilter(project) {
   projectFilter = project;
   lastTerminalKey = '';
+  lastTerminalCount = 0;
   lastEventLogKey = '';
+  lastEventLogCount = 0;
   // Update tab active states
   document.querySelectorAll('.project-tab').forEach(t => {
     t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));

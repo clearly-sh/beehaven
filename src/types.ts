@@ -38,6 +38,8 @@ export interface ClaudeEvent {
   // Subagent events
   agent_id?: string;
   agent_type?: string;
+  // Transcript (present on most events)
+  transcript_path?: string;
 }
 
 /** Rooms in the BeeHaven office — WeWork single-team layout */

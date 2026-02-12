@@ -164,113 +164,63 @@ body {
 .icon-btn:hover { border-color: var(--accent-brass); color: var(--accent-brass); }
 .icon-btn-sm { width: 28px; height: 28px; font-size: 18px; border: none; }
 
-/* ---- WoW-Style Floating Terminal ---- */
+/* ---- WoW-Style Floating Chat ---- */
 .term-window {
   position: fixed;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  box-shadow: none;
-  overflow: hidden;
-  min-width: 320px;
-  min-height: 200px;
-  transition: background 0.3s, box-shadow 0.3s;
-}
-.term-window:hover {
-  background: rgba(0, 0, 0, 0.6);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-}
-.term-window.hidden { display: none; }
-.term-window.minimized .term-window-body,
-.term-window.minimized .term-window-tabs { display: none; }
-.term-window.minimized { min-height: auto; height: auto !important; }
-
-.term-window-titlebar {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  cursor: grab;
-  user-select: none;
-  flex-shrink: 0;
-}
-.term-window-titlebar:active { cursor: grabbing; }
-
-.term-window-controls { display: flex; gap: 6px; margin-right: 12px; }
-.term-window-btn {
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  border: none;
-  font-size: 8px;
-  line-height: 12px;
-  text-align: center;
-  cursor: pointer;
-  color: transparent;
-  transition: color 0.15s;
-  padding: 0;
-}
-.term-window-close { background: #FF5F57; }
-.term-window-minimize { background: #FEBC2E; }
-.term-window-maximize { background: #28C840; }
-.term-window:hover .term-window-btn { color: rgba(0, 0, 0, 0.5); }
-
-.term-window-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.3);
-  flex: 1;
-  text-align: center;
+  width: min(560px, 40vw);
+  height: min(380px, 45vh);
+  min-width: 280px;
+  min-height: 180px;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
-.term-window-drag-spacer { flex: 1; }
+.term-window > * { pointer-events: auto; }
+.term-window.hidden { display: none; }
+
+/* Position presets */
+.term-window.pos-bl { left: 16px; bottom: 16px; }
+.term-window.pos-br { right: 16px; bottom: 16px; }
+.term-window.pos-tl { left: 16px; top: 52px; }
+.term-window.pos-tr { right: 16px; top: 52px; }
 
 .term-window-tabs {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+  padding: 0 4px;
+  user-select: none;
 }
 .term-window-tab {
   flex: none;
-  padding: 6px 12px;
+  padding: 4px 8px;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.25);
   background: none;
   border: none;
   cursor: pointer;
-  transition: all 0.15s;
-  border-bottom: 2px solid transparent;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: color 0.15s;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
-.term-window-tab:hover { color: rgba(255, 255, 255, 0.6); }
-.term-window-tab.active {
-  color: var(--accent-brass);
-  border-bottom-color: var(--accent-brass);
-}
+.term-window-tab:hover { color: rgba(255, 255, 255, 0.5); }
+.term-window-tab.active { color: var(--accent-brass); }
 
-/* Tab divider + project tabs */
 .term-tab-divider {
   width: 1px;
-  margin: 6px 4px;
-  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
   align-self: stretch;
 }
 
 .project-tabs {
   display: flex;
-  gap: 2px;
+  gap: 1px;
   overflow-x: auto;
   scrollbar-width: none;
   flex: 1;
@@ -279,23 +229,38 @@ body {
 .project-tabs::-webkit-scrollbar { display: none; }
 
 .project-tab {
-  padding: 4px 10px;
+  padding: 3px 8px;
   font-size: 10px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: color 0.15s;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
-.project-tab:hover { color: rgba(255, 255, 255, 0.6); }
-.project-tab.active {
-  color: #C4B5FD;
-  border-bottom-color: #C4B5FD;
+.project-tab:hover { color: rgba(255, 255, 255, 0.5); }
+.project-tab.active { color: #C4B5FD; }
+
+/* Position cycle button */
+.term-position-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+  margin-left: auto;
 }
+.term-position-btn:hover { color: rgba(255, 255, 255, 0.5); }
 
 .term-window-body {
   flex: 1;
@@ -308,154 +273,129 @@ body {
   inset: 0;
   overflow-y: auto;
   flex-direction: column;
+  /* Fade out at top so old messages dissolve */
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%);
 }
 .term-window-panel.active { display: flex; }
-.term-window-panel::-webkit-scrollbar { width: 3px; }
-.term-window-panel::-webkit-scrollbar-track { background: transparent; }
-.term-window-panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 2px; }
+.term-window-panel::-webkit-scrollbar { width: 0; }
 
-/* Resize handles */
-.term-resize { position: absolute; z-index: 1; }
-.term-resize-n, .term-resize-s { left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
-.term-resize-e, .term-resize-w { top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
-.term-resize-n { top: -3px; }
-.term-resize-s { bottom: -3px; }
-.term-resize-e { right: -3px; }
-.term-resize-w { left: -3px; }
-.term-resize-ne, .term-resize-nw, .term-resize-se, .term-resize-sw { width: 12px; height: 12px; }
-.term-resize-ne { top: -3px; right: -3px; cursor: nesw-resize; }
-.term-resize-nw { top: -3px; left: -3px; cursor: nwse-resize; }
-.term-resize-se { bottom: -3px; right: -3px; cursor: nwse-resize; }
-.term-resize-sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
-
-/* ---- Terminal Content — WoW Chat Style ---- */
+/* ---- Terminal Content — WoW Chat Lines ---- */
 #terminal-output {
-  padding: 12px;
+  padding: 6px 8px;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 12px;
-  line-height: 1.6;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.4);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
 }
 
 .term-entry {
-  padding: 4px 8px;
-  animation: fadeIn 0.2s ease;
-  border-radius: 2px;
-  margin-bottom: 1px;
-  border-left: 2px solid transparent;
+  padding: 1px 0;
+  animation: fadeIn 0.15s ease;
   background: transparent;
 }
-.term-entry:last-child { border-bottom: none; }
 
-/* Role-colored entries — minimal, text-color driven */
-.term-entry.role-user { border-left-color: rgba(96, 165, 250, 0.5); }
-.term-entry.role-claude { border-left-color: rgba(245, 197, 66, 0.5); }
-.term-entry.role-tool { border-left-color: rgba(107, 114, 128, 0.3); }
-.term-entry.role-error { border-left-color: rgba(239, 68, 68, 0.5); }
-
-.term-prompt {
-  color: var(--accent-honey);
-  font-weight: 600;
-  margin-bottom: 2px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-}
-.term-prompt .term-badge {
+/* Date separators */
+.term-session-sep {
+  text-align: center;
   font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-weight: 700;
-  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.1);
+  padding: 4px 0 2px;
   letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
-.term-prompt .term-role-icon {
-  font-size: 11px;
-  line-height: 1;
-}
-.term-badge.user { background: rgba(96, 165, 250, 0.2); color: #93C5FD; }
-.term-badge.tool { background: rgba(74, 222, 128, 0.2); color: #86EFAC; }
-.term-badge.stop { background: rgba(232, 163, 23, 0.2); color: #FCD34D; }
-.term-badge.pre  { background: rgba(168, 162, 158, 0.15); color: #A8A29E; }
-.term-badge.error { background: rgba(239, 68, 68, 0.2); color: #FCA5A5; }
 
-/* Project tag on terminal entries */
-.term-project-tag {
+/* WoW channel colors */
+.term-channel {
+  font-weight: 700;
+  font-size: 11px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+.term-entry.role-user .term-channel { color: #AAD4FF; }
+.term-entry.role-claude .term-channel { color: #4ADE80; }
+.term-entry.role-tool .term-channel { color: #777; }
+.term-entry.role-error .term-channel { color: #FF6B6B; }
+
+.term-text {
+  color: #fff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.term-entry.role-user .term-text { color: #fff; }
+.term-entry.role-claude .term-text { color: #fff; }
+.term-entry.role-tool .term-text { color: rgba(255, 255, 255, 0.5); font-size: 11px; }
+.term-entry.role-error .term-text { color: #FF6B6B; }
+
+.term-time {
   font-size: 9px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: rgba(139, 92, 246, 0.25);
-  color: #C4B5FD;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  text-shadow: none;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.15);
+  margin-left: 6px;
   white-space: nowrap;
 }
 
-.term-content {
+.term-project-tag {
+  font-size: 9px;
+  color: rgba(196, 181, 253, 0.4);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* ---- Chat Input Bar ---- */
+.term-input-bar {
+  flex-shrink: 0;
+  padding: 4px 8px 6px;
+}
+.term-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
   color: var(--text-on-dark);
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding-left: 4px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
-.term-meta {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.25);
-  margin-top: 2px;
-}
-.term-relative-time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.2);
-}
-
-/* Session separator in terminal */
-.term-session-sep {
-  text-align: center;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.15);
-  padding: 6px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
-  margin: 2px 0;
-  letter-spacing: 0.5px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.term-input:focus {
+  border-color: rgba(196, 168, 130, 0.4);
+  background: rgba(0, 0, 0, 0.55);
+}
+.term-input::placeholder {
+  color: rgba(255, 255, 255, 0.15);
 }
 
 /* ---- Activity Log ---- */
 #event-log {
   flex: 1;
   overflow-y: auto;
-  padding: 0 12px 12px;
+  padding: 4px 8px 8px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.4);
 }
-#event-log::-webkit-scrollbar { width: 3px; }
-#event-log::-webkit-scrollbar-track { background: transparent; }
-#event-log::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 2px; }
+#event-log::-webkit-scrollbar { width: 0; }
 
 .log-entry {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  animation: fadeIn 0.3s ease;
-  transition: background 0.15s;
+  gap: 6px;
+  padding: 3px 4px;
+  animation: fadeIn 0.15s ease;
 }
-.log-entry:hover { background: rgba(255, 255, 255, 0.03); }
-.log-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.log-icon { font-size: 12px; flex-shrink: 0; margin-top: 1px; }
 .log-detail {
-  font-size: 12px;
-  color: var(--text-on-dark);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
   word-break: break-word;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
-.log-time { font-size: 10px; color: rgba(255, 255, 255, 0.2); margin-top: 2px; display: block; }
+.log-time { font-size: 9px; color: rgba(255, 255, 255, 0.12); margin-top: 1px; display: block; }
 
 /* ---- Session History Browser ---- */
 .session-browser-header {
@@ -727,7 +667,7 @@ body {
   font-size: 13px;
   color: var(--text-on-dark);
   line-height: 1.4;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* ---- Animations ---- */
@@ -811,10 +751,11 @@ body {
 
   .term-window {
     left: 0 !important;
-    right: 0;
+    right: 0 !important;
     bottom: 0 !important;
+    top: auto !important;
     width: 100% !important;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    height: 40vh !important;
   }
 
   .shop-popover { width: 300px; }

@@ -125,6 +125,8 @@ export class Office {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private knownProjects = new Set<string>();
   private deletedProjects = new Set<string>();
+  private sessionProjects = new Map<string, string>();
+  private activeSessions = new Map<string, string>(); // session_id → project
   private static CONFIG_DIR = join(homedir(), '.beehaven');
   private static CONFIG_FILE = join(homedir(), '.beehaven', 'config.json');
 
@@ -235,11 +237,9 @@ export class Office {
       }
     } catch { /* claude dir may not exist */ }
 
-    // Set state.projects so first WebSocket broadcast includes them
-    if (this.knownProjects.size > 0) {
-      this.state.projects = Array.from(this.knownProjects).sort();
-      console.log(`[office] Auto-detected ${this.knownProjects.size} projects: ${this.state.projects.join(', ')}`);
-    }
+    // Projects tabs show only active sessions — populated dynamically via processEvent
+    console.log(`[office] Known projects (from history): ${Array.from(this.knownProjects).join(', ') || 'none'}`);
+    this.state.projects = [];
   }
 
   /** Process a Claude Code event and update office state */
@@ -253,11 +253,22 @@ export class Office {
       : undefined;
     if (project && !this.deletedProjects.has(project)) {
       this.knownProjects.add(project);
-      this.state.projects = Array.from(this.knownProjects).sort();
       queen.project = project;
     } else if (project) {
       queen.project = project;
     }
+
+    // Track session → project mapping
+    if (event.session_id && project) {
+      this.sessionProjects.set(event.session_id, project);
+      // Track active session (any event from a session means it's alive)
+      if (event.hook_event_name !== 'SessionEnd') {
+        this.activeSessions.set(event.session_id, project);
+      }
+    }
+
+    // Derive project tabs from active sessions only
+    this.refreshActiveProjects();
 
     // Reset idle timer
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -384,7 +395,9 @@ export class Office {
       }
 
       case 'SessionEnd': {
-        this.state.sessionActive = false;
+        this.activeSessions.delete(event.session_id);
+        this.refreshActiveProjects();
+        this.state.sessionActive = this.activeSessions.size > 0;
         this.moveBee(queen, 'lobby', 'idle');
         queen.message = 'See you next time!';
         this.log('SessionEnd', 'Session ended', eventIcon('SessionEnd'), project);
@@ -442,8 +455,8 @@ export class Office {
   addTerminalEntry(entry: TerminalEntry) {
     if (!this.state.terminalLog) this.state.terminalLog = [];
     this.state.terminalLog.push(entry);
-    if (this.state.terminalLog.length > 100) {
-      this.state.terminalLog = this.state.terminalLog.slice(-100);
+    if (this.state.terminalLog.length > 500) {
+      this.state.terminalLog = this.state.terminalLog.slice(-500);
     }
   }
 
@@ -451,7 +464,11 @@ export class Office {
   removeProject(name: string) {
     this.knownProjects.delete(name);
     this.deletedProjects.add(name);
-    this.state.projects = Array.from(this.knownProjects).sort();
+    // Remove active sessions for this project
+    for (const [sid, proj] of this.activeSessions) {
+      if (proj === name) this.activeSessions.delete(sid);
+    }
+    this.refreshActiveProjects();
     this.saveDeletedProjects();
     // Remove worker bees from this project; untag persistent bees (queen, recruiter)
     this.state.bees = this.state.bees.filter(bee => {
@@ -498,6 +515,42 @@ export class Office {
 
   getState(): OfficeState {
     return this.state;
+  }
+
+  /** Resolve which project a session belongs to */
+  getSessionProject(sessionId?: string): string | undefined {
+    if (!sessionId) return this.state.bees[0]?.project;
+    return this.sessionProjects.get(sessionId) || this.state.bees[0]?.project;
+  }
+
+  /** Get an active session ID for a given project (or any active session if no project) */
+  getActiveSessionId(project?: string): string | undefined {
+    if (project) {
+      for (const [sid, proj] of this.activeSessions) {
+        if (proj === project) return sid;
+      }
+    }
+    // Fall back to most recent active session
+    const entries = [...this.activeSessions.keys()];
+    return entries[entries.length - 1];
+  }
+
+  /** Register a discovered session (from transcript scan, not hooks) */
+  registerSession(sessionId: string, project: string) {
+    if (this.deletedProjects.has(project)) return;
+    this.knownProjects.add(project);
+    this.sessionProjects.set(sessionId, project);
+    this.activeSessions.set(sessionId, project);
+    this.refreshActiveProjects();
+  }
+
+  /** Rebuild state.projects from active sessions (deduped, sorted) */
+  private refreshActiveProjects() {
+    const active = new Set<string>();
+    for (const proj of this.activeSessions.values()) {
+      if (!this.deletedProjects.has(proj)) active.add(proj);
+    }
+    this.state.projects = Array.from(active).sort();
   }
 
   // --- Session Persistence ---

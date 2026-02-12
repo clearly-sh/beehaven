@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
+import { spawn } from 'child_process';
 import type { OfficeState, WSMessage, OnboardingConfig } from './types.js';
 import { Voice } from './voice.js';
 import { Relay, CLEARLY_RELAY_URL } from './relay.js';
@@ -305,6 +306,12 @@ export class Server {
       this.clients.add(ws);
       console.log(`[server] Client connected (${this.clients.size} total)`);
 
+      // Send current state immediately so client doesn't wait for periodic broadcast
+      if (this.office) {
+        const msg = JSON.stringify({ type: 'state', payload: this.office.getState() });
+        ws.send(msg);
+      }
+
       ws.on('message', (data) => {
         try {
           const msg = JSON.parse(data.toString());
@@ -337,6 +344,32 @@ export class Server {
                 saveOnboardingConfig({ shop: this.office.shopPersistData() });
               }
               this.broadcastState(this.office.getState());
+            }
+          } else if (msg.type === 'user-input' && this.office) {
+            const text = msg.text as string;
+            const project = msg.project as string | undefined;
+            if (typeof text === 'string' && text.trim()) {
+              const trimmed = text.trim();
+
+              // Add to terminal log immediately
+              this.office.addTerminalEntry({
+                event: 'UserPromptSubmit',
+                content: trimmed,
+                timestamp: new Date().toISOString(),
+                project: project,
+                role: 'user',
+              });
+              this.broadcastState(this.office.getState());
+              this.broadcastResponse({ event: 'UserPromptSubmit', content: trimmed });
+
+              // Send to active Claude Code session
+              const sessionId = this.office.getActiveSessionId(project || undefined);
+              if (sessionId) {
+                console.log(`[server] Sending to Claude session ${sessionId}: ${trimmed.slice(0, 80)}`);
+                this.sendToClaudeSession(sessionId, trimmed);
+              } else {
+                console.log(`[server] No active session for project=${project}, message logged only`);
+              }
             }
           }
         } catch { /* ignore */ }
@@ -395,5 +428,67 @@ export class Server {
         client.send(data);
       }
     }
+  }
+
+  /** Send a prompt to an active Claude Code session via CLI */
+  private sendToClaudeSession(sessionId: string, text: string) {
+    const child = spawn('claude', ['--resume', sessionId, '-p', text], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (err) => {
+      console.error(`[claude] Failed to spawn:`, err.message);
+      if (this.office) {
+        this.office.addTerminalEntry({
+          event: 'PostToolUseFailure',
+          content: `Could not reach Claude: ${err.message}`,
+          timestamp: new Date().toISOString(),
+          role: 'error',
+        });
+        this.broadcastState(this.office.getState());
+      }
+    });
+
+    child.on('close', (code) => {
+      if (code === 0 && stdout.trim()) {
+        console.log(`[claude] Response (${stdout.length} chars): ${stdout.trim().slice(0, 100)}...`);
+        // Response will also appear via hooks/transcript scanner,
+        // but add directly for immediate feedback
+        const project = this.office?.getSessionProject(sessionId);
+        if (this.office) {
+          this.office.addTerminalEntry({
+            event: 'Stop',
+            content: stdout.trim(),
+            timestamp: new Date().toISOString(),
+            project: project,
+            role: 'claude',
+          });
+          this.broadcastState(this.office.getState());
+          this.broadcastResponse({ event: 'Stop', content: stdout.trim() });
+        }
+      } else if (code !== 0) {
+        console.error(`[claude] Exited with code ${code}: ${stderr.trim().slice(0, 200)}`);
+        if (this.office) {
+          this.office.addTerminalEntry({
+            event: 'PostToolUseFailure',
+            content: `Claude exited with code ${code}${stderr.trim() ? ': ' + stderr.trim().slice(0, 200) : ''}`,
+            timestamp: new Date().toISOString(),
+            role: 'error',
+          });
+          this.broadcastState(this.office.getState());
+        }
+      }
+    });
   }
 }
