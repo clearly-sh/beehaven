@@ -180,7 +180,7 @@ async function flushNewTranscriptText(
                   const audio = await voice.speak(text);
                   if (audio) {
                     console.log(`[voice] Got ${audio.length} bytes audio`);
-                    server.broadcastSpeech(audio.toString('base64'), displayText);
+                    server.broadcastSpeech(audio.toString('base64'), displayText, tracker.project);
                   } else {
                     console.log(`[voice] speak() returned null`);
                   }
@@ -320,6 +320,19 @@ export async function main(opts: StartOptions = {}) {
     if (event.hook_event_name === 'SessionEnd') {
       saveShopToConfig(office.shopPersistData());
       office.saveSession();
+      // Sync project context to Clearly cloud on session end
+      if (proj) {
+        const syncData = office.getProjectSyncData(proj);
+        if (syncData) relay.syncProject(syncData);
+        // Upload transcript and docs to Clearly cloud
+        if (event.transcript_path) {
+          relay.uploadTranscript(event.transcript_path, event.session_id, proj);
+        }
+        const projectRoot = office.getProjectPath(proj);
+        if (projectRoot) {
+          relay.uploadDocs(proj, projectRoot);
+        }
+      }
     }
 
     relay.syncState(office.getState());
@@ -340,6 +353,16 @@ export async function main(opts: StartOptions = {}) {
   // Auto-save shop state every 60s
   setInterval(() => {
     saveShopToConfig(office.shopPersistData());
+  }, 60_000);
+
+  // Sync active project context to Clearly cloud every 60s
+  setInterval(() => {
+    if (!relay.isConnected()) return;
+    const projects = office.getState().projects || [];
+    for (const proj of projects) {
+      const syncData = office.getProjectSyncData(proj);
+      if (syncData) relay.syncProject(syncData);
+    }
   }, 60_000);
 
   // Start everything
