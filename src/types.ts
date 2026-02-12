@@ -102,41 +102,9 @@ export interface OfficeState {
   sessionActive: boolean;
   eventLog: EventLogEntry[];
   stats: OfficeStats;
-  chat?: ChatSession;
-  agentScripts?: AgentScript[];
   projects?: string[];
   terminalLog?: TerminalEntry[];
   shop: ShopState;
-}
-
-/** Chat message in the recruiter conversation */
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-  agentScript?: {
-    name: string;
-    filename: string;
-    status: 'draft' | 'committed' | 'pr-created';
-  };
-}
-
-/** Chat session state */
-export interface ChatSession {
-  messages: ChatMessage[];
-  projectId?: string;
-  isProcessing: boolean;
-}
-
-/** Agent script metadata */
-export interface AgentScript {
-  name: string;
-  filename: string;
-  description: string;
-  createdAt: string;
-  status: 'draft' | 'committed' | 'pr-created';
-  prUrl?: string;
 }
 
 export interface EventLogEntry {
@@ -210,7 +178,7 @@ export interface ShopPersistData {
 
 /** WebSocket message from server to client */
 export interface WSMessage {
-  type: 'state' | 'event' | 'speech' | 'transcript' | 'chat' | 'projects' | 'agent-status' | 'shop-result';
+  type: 'state' | 'event' | 'speech' | 'transcript' | 'shop-result';
   payload: unknown;
 }
 
@@ -227,6 +195,15 @@ export interface SpeechRequest {
 /** Tier of BeeHaven usage */
 export type BeeHavenTier = 'local' | 'connected' | 'team';
 
+/** Clearly account profile returned from relay heartbeat */
+export interface ClearlyProfile {
+  displayName: string;
+  photoURL?: string;
+  email?: string;
+  subscriptionPlan: 'free' | 'starter' | 'pro' | 'studio';
+  subscriptionStatus?: string;
+}
+
 /** Full onboarding config persisted to ~/.beehaven/config.json */
 export interface OnboardingConfig {
   onboarded: boolean;
@@ -239,10 +216,7 @@ export interface OnboardingConfig {
     floor: number;
     desk: number;
   };
-  user?: {
-    displayName: string;
-    photoURL?: string;
-  };
+  user?: ClearlyProfile;
   shop?: ShopPersistData;
 }
 
