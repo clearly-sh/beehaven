@@ -9,51 +9,120 @@ const CANVAS_W = 1480;
 const CANVAS_H = 1040;
 const COORD_SCALE = 2; // Backend rooms are half-scale
 
-// WeWork palette
+// WeWork palette — warm charcoal, natural oak, sage green, honey gold
 const P = {
-  floor:      0x1a1a2e,
-  floorLine:  0x22223a,
-  wall:       0x2a2a44,
-  wallDark:   0x14142a,
-  wood:       0x5c3d1e,
-  woodDark:   0x3a2510,
-  glass:      0x1a3050,
-  glassBrd:   0x2a5080,
-  cushion:    0x1a4a3a,
-  cushionAlt: 0x8a4a0a,
-  plant:      0x1a8a4a,
-  plantDark:  0x0a6a30,
-  planter:    0x3a3028,
-  honey:      0xC8AA6E,
-  white:      0xd0c8b8,
-  offWhite:   0x252540,
-  dark:       0x0a0a18,
-  leather:    0x3a2820,
-  monitor:    0x080818,
-  monGlow:    0x0AC8B9,
-  led:        0x0AC8B9,
-  ledRed:     0xC8354C,
+  floor:      0x201C18,
+  floorLine:  0x2A2620,
+  wall:       0x2D2925,
+  wallDark:   0x1A1714,
+  wood:       0x9C8868,
+  woodDark:   0x6B573D,
+  glass:      0x2A3530,
+  glassBrd:   0x4A6050,
+  cushion:    0x3D5A45,
+  cushionAlt: 0x8B6340,
+  plant:      0x4A7A52,
+  plantDark:  0x2D5A35,
+  planter:    0x5C4A38,
+  honey:      0xD4A545,
+  white:      0xE8DED0,
+  offWhite:   0x3A352E,
+  dark:       0x141210,
+  leather:    0x6B4830,
+  monitor:    0x1A1A1A,
+  monGlow:    0xE8DED0,
+  led:        0x4ADE80,
+  ledRed:     0xEF4444,
 };
+
+// --- Bee Color Helpers ---
+function darkenColor(color, factor) {
+  const r = ((color >> 16) & 0xFF) * factor;
+  const g = ((color >> 8) & 0xFF) * factor;
+  const b = (color & 0xFF) * factor;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+}
 
 // Room definitions (backend coords * COORD_SCALE)
 const ROOMS = [
-  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0x1e1a10, accent: 0xC8AA6E },
-  { id: 'desk',         label: 'Team Office',   x: 250,  y: 40,  w: 600, h: 340, color: 0x101828, accent: 0x0AC8B9 },
-  { id: 'phone-a',      label: 'Phone',         x: 40,   y: 40,  w: 80,  h: 100, color: 0x0e1a2a, accent: 0x0397AB },
-  { id: 'phone-b',      label: 'Phone',         x: 1060, y: 40,  w: 80,  h: 100, color: 0x0e1a2a, accent: 0x0397AB },
-  { id: 'server-room',  label: 'Server Room',   x: 1000, y: 470, w: 120, h: 160, color: 0x1a0e10, accent: 0xC8354C },
-  { id: 'meeting-room', label: 'Conference',     x: 40,   y: 470, w: 200, h: 200, color: 0x0e1a14, accent: 0x1EBB70 },
-  { id: 'water-cooler', label: 'Lounge',         x: 640,  y: 470, w: 250, h: 200, color: 0x141028, accent: 0x7B5EA7 },
-  { id: 'coffee',       label: 'Kitchen',        x: 340,  y: 470, w: 200, h: 200, color: 0x1a1408, accent: 0xC89B3C },
+  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0x302820, accent: 0xD4A545 },
+  { id: 'library',      label: 'Library',      x: 250,  y: 40,  w: 280, h: 340, color: 0x253028, accent: 0x3D8A55 },
+  { id: 'studio',       label: 'Studio',       x: 550,  y: 40,  w: 300, h: 340, color: 0x252834, accent: 0x5B9BD5 },
+  { id: 'web-booth',    label: 'Web',          x: 40,   y: 40,  w: 80,  h: 100, color: 0x282634, accent: 0x7B68EE },
+  { id: 'phone-b',      label: 'Focus',        x: 1060, y: 40,  w: 80,  h: 100, color: 0x253032, accent: 0x6BA3BE },
+  { id: 'server-room',  label: 'Server Room',  x: 1000, y: 470, w: 120, h: 160, color: 0x302220, accent: 0xEF6B4A },
+  { id: 'meeting-room', label: 'Conference',   x: 40,   y: 470, w: 200, h: 200, color: 0x223028, accent: 0x4ADE80 },
+  { id: 'water-cooler', label: 'Lounge',       x: 640,  y: 470, w: 250, h: 200, color: 0x2A2832, accent: 0xC490D0 },
+  { id: 'coffee',       label: 'Kitchen',      x: 340,  y: 470, w: 200, h: 200, color: 0x30281C, accent: 0xD4A545 },
+];
+
+// ── Player Collision System ──
+// Room interiors are ROOMS inset by WALL px so walls exist between rooms and corridors.
+// Doors bridge the wall gaps. Furniture blocks movement inside rooms.
+const WALL = 6;
+
+const CORRIDORS = [
+  { x: 20,  y: 140, w: 230, h: 260 },   // Left corridor (web-booth ↔ lobby)
+  { x: 850, y: 140, w: 290, h: 330 },   // Right corridor (phone-b ↔ hallway)
+  { x: 240, y: 380, w: 880, h: 90 },    // Main hallway
+  { x: 530, y: 40,  w: 20,  h: 340 },   // Library ↔ studio glass gap
+];
+
+const DOOR_OPENINGS = [
+  // Horizontal walls (top/bottom of rooms) — bridge from interior through wall to corridor
+  { x: 55,   y: 132, w: 50, h: 12 },    // web-booth bottom
+  { x: 1075, y: 132, w: 50, h: 12 },    // phone-b bottom
+  { x: 375,  y: 372, w: 40, h: 12 },    // library south
+  { x: 685,  y: 372, w: 40, h: 12 },    // studio south
+  { x: 160,  y: 398, w: 40, h: 12 },    // lobby north
+  { x: 120,  y: 452, w: 40, h: 26 },    // lobby↔meeting (10px floor gap + walls)
+  { x: 420,  y: 468, w: 40, h: 12 },    // coffee north
+  { x: 725,  y: 468, w: 42, h: 12 },    // lounge north
+  { x: 1045, y: 468, w: 40, h: 12 },    // server-room north
+  // Vertical walls (left/right of rooms)
+  { x: 248,  y: 185, w: 12, h: 40 },    // library west
+  { x: 522,  y: 185, w: 36, h: 40 },    // library↔studio glass divider
+  { x: 842,  y: 185, w: 12, h: 40 },    // studio east
+  { x: 232,  y: 418, w: 12, h: 30 },    // lobby right
+];
+
+const FURNITURE_COLLIDERS = [
+  // Library
+  { x: 260, y: 55,  w: 90,  h: 120 },   // bookshelf 1
+  { x: 370, y: 55,  w: 90,  h: 120 },   // bookshelf 2
+  { x: 280, y: 200, w: 120, h: 50 },    // reading desk 1
+  { x: 280, y: 300, w: 120, h: 50 },    // reading desk 2
+  { x: 462, y: 286, w: 56,  h: 44 },    // armchair
+  // Studio
+  { x: 580, y: 70,  w: 130, h: 55 },    // workstation desk 1
+  { x: 700, y: 70,  w: 130, h: 55 },    // workstation desk 2
+  { x: 580, y: 200, w: 130, h: 55 },    // workstation desk 3
+  { x: 700, y: 200, w: 130, h: 55 },    // workstation desk 4
+  { x: 790, y: 100, w: 55,  h: 45 },    // standing desk
+  // Conference room
+  { x: 70,  y: 530, w: 140, h: 60 },    // conference table
+  // Kitchen — counter + equipment zone
+  { x: 350, y: 468, w: 190, h: 82 },    // countertop + espresso + dispensers
+  // Lounge
+  { x: 660, y: 530, w: 200, h: 20 },    // sofa back
+  { x: 660, y: 550, w: 20,  h: 80 },    // sofa arm (left side)
+  { x: 700, y: 570, w: 60,  h: 35 },    // coffee table
+  // Server room
+  { x: 1015, y: 490, w: 75, h: 120 },   // server racks
+  // Booths
+  { x: 52,   y: 58, w: 50,  h: 30 },    // web booth desk
+  { x: 1075, y: 65, w: 45,  h: 25 },    // focus booth desk
+  // Lobby
+  { x: 80,  y: 415, w: 120, h: 20 },    // reception desk
 ];
 
 // Local ambient bees (rendered client-side alongside backend bees)
 const AMBIENT_BEES = [
-  { id: 'omni-artist',  name: 'OmniArtist',   homeRoom: 'desk',         color: 0x8B5CF6, accessory: 'beret' },
+  { id: 'omni-artist',  name: 'OmniArtist',   homeRoom: 'studio',       color: 0x8B5CF6, accessory: 'beret' },
   { id: 'omni-manager', name: 'OmniManager',  homeRoom: 'meeting-room', color: 0x3B82F6, accessory: 'glasses' },
-  { id: 'coder-1',      name: 'DevBee',       homeRoom: 'desk',         color: 0x22C55E, accessory: 'coder' },
-  { id: 'coder-2',      name: 'StackBee',     homeRoom: 'desk',         color: 0x06B6D4, accessory: 'coder' },
-  { id: 'coder-3',      name: 'ByteBee',      homeRoom: 'desk',         color: 0xF97316, accessory: 'coder' },
+  { id: 'coder-1',      name: 'DevBee',       homeRoom: 'studio',       color: 0x22C55E, accessory: 'coder' },
+  { id: 'coder-2',      name: 'StackBee',     homeRoom: 'library',      color: 0x06B6D4, accessory: 'coder' },
+  { id: 'coder-3',      name: 'ByteBee',      homeRoom: 'studio',       color: 0xF97316, accessory: 'coder' },
 ];
 
 // --- State ---
@@ -100,6 +169,13 @@ let pointers = new Map();   // pointerId → {x, y} for touch
 let lastPinchDist = 0;
 const ZOOM_MIN = 0.5, ZOOM_MAX = 3.0;
 const CAM_LERP = 0.15;
+let cameraFollow = null;       // bee object to follow, or null for free camera
+let followIndicator = null;    // pulsing ring Graphics around followed bee
+
+// --- Edge Pan (LoL-style) ---
+const EDGE_PAN_ZONE = 50;     // px from viewport edge triggers pan
+const EDGE_PAN_SPEED = 6;     // px per frame at full intensity
+let mouseViewX = -1, mouseViewY = -1, mouseInCanvas = false;
 
 // --- Player Bee ---
 let playerBee = null;
@@ -120,7 +196,7 @@ const ELEV = {
   holdFrames: 90,
 };
 
-const UPPER_ROOMS = new Set(['desk', 'phone-a', 'phone-b', 'lobby']);
+const UPPER_ROOMS = new Set(['library', 'studio', 'web-booth', 'phone-b', 'lobby']);
 const LOWER_ROOMS = new Set(['meeting-room', 'coffee', 'water-cooler', 'server-room']);
 
 let elevator = {
@@ -141,8 +217,9 @@ let elevator = {
 // --- A* Waypoint Pathfinding ---
 const WAYPOINTS = [
   // ── Room interiors ──
-  { id: 'phone-a',       x: 80,   y: 90,   room: 'phone-a' },
-  { id: 'desk',          x: 500,  y: 200,  room: 'desk' },
+  { id: 'web-booth',     x: 80,   y: 90,   room: 'web-booth' },
+  { id: 'library',       x: 390,  y: 200,  room: 'library' },
+  { id: 'studio',        x: 700,  y: 200,  room: 'studio' },
   { id: 'phone-b',       x: 1100, y: 90,   room: 'phone-b' },
   { id: 'lobby',         x: 140,  y: 430,  room: 'lobby' },
   { id: 'meeting-room',  x: 140,  y: 570,  room: 'meeting-room' },
@@ -151,12 +228,14 @@ const WAYPOINTS = [
   { id: 'server-room',   x: 1060, y: 550,  room: 'server-room' },
 
   // ── Door thresholds (just outside each door) ──
-  { id: 'door-pa',       x: 80,   y: 152,  room: null },  // phone-a bottom
+  { id: 'door-web',      x: 80,   y: 152,  room: null },  // web-booth bottom
   { id: 'door-pb',       x: 1100, y: 152,  room: null },  // phone-b bottom
-  { id: 'door-desk-W',   x: 242,  y: 144,  room: null },  // desk left side
-  { id: 'door-desk-E',   x: 858,  y: 144,  room: null },  // desk right side
-  { id: 'door-desk-L',   x: 403,  y: 390,  room: null },  // desk bottom-left
-  { id: 'door-desk-R',   x: 638,  y: 390,  room: null },  // desk bottom-right
+  { id: 'door-lib-W',    x: 242,  y: 200,  room: null },  // library left side
+  { id: 'door-lib-S',    x: 390,  y: 390,  room: null },  // library bottom
+  { id: 'door-lib-E',    x: 538,  y: 200,  room: null },  // library→studio glass divider
+  { id: 'door-studio-W', x: 558,  y: 200,  room: null },  // studio←library glass divider
+  { id: 'door-studio-S', x: 700,  y: 390,  room: null },  // studio bottom
+  { id: 'door-studio-E', x: 858,  y: 200,  room: null },  // studio right side
   { id: 'door-lobby-N',  x: 178,  y: 395,  room: null },  // lobby top
   { id: 'door-lobby-R',  x: 250,  y: 430,  room: null },  // lobby right
   { id: 'door-lobby-S',  x: 140,  y: 465,  room: null },  // lobby bottom / meeting top
@@ -164,9 +243,9 @@ const WAYPOINTS = [
   { id: 'door-lounge',   x: 741,  y: 465,  room: null },  // water-cooler top
   { id: 'door-server',   x: 1060, y: 465,  room: null },  // server-room top
 
-  // ── Corridors (open space flanking desk room) ──
-  { id: 'corr-L',        x: 80,   y: 270,  room: null },  // left of desk
-  { id: 'corr-R',        x: 1100, y: 270,  room: null },  // right of desk
+  // ── Corridors (open space flanking rooms) ──
+  { id: 'corr-L',        x: 80,   y: 270,  room: null },  // left of library
+  { id: 'corr-R',        x: 1100, y: 270,  room: null },  // right of studio
 
   // ── Main hallway (y≈420, right of lobby) ──
   { id: 'hall-1',        x: 280,  y: 420,  room: null },
@@ -177,37 +256,44 @@ const WAYPOINTS = [
 ];
 
 const EDGES = [
-  // ── Phone booths → corridors ──
-  ['phone-a', 'door-pa'],      ['door-pa', 'corr-L'],
-  ['phone-b', 'door-pb'],      ['door-pb', 'corr-R'],
+  // ── Web booth / phone-b → corridors ──
+  ['web-booth', 'door-web'],   ['door-web', 'corr-L'],
+  ['phone-b', 'door-pb'],     ['door-pb', 'corr-R'],
 
-  // ── Desk → all 4 doors ──
-  ['desk', 'door-desk-W'],     ['desk', 'door-desk-E'],
-  ['desk', 'door-desk-L'],     ['desk', 'door-desk-R'],
+  // ── Library doors ──
+  ['library', 'door-lib-W'],   ['library', 'door-lib-S'],
+  ['library', 'door-lib-E'],
 
-  // ── Corridors ↔ desk side doors (short path between phone booths and desk) ──
-  ['corr-L', 'door-desk-W'],   ['corr-R', 'door-desk-E'],
+  // ── Studio doors ──
+  ['studio', 'door-studio-W'], ['studio', 'door-studio-S'],
+  ['studio', 'door-studio-E'],
+
+  // ── Glass divider (library ↔ studio) ──
+  ['door-lib-E', 'door-studio-W'],
+
+  // ── Side corridors ↔ room side doors ──
+  ['corr-L', 'door-lib-W'],   ['corr-R', 'door-studio-E'],
 
   // ── Corridors → lobby / hallway ──
-  ['corr-L', 'door-lobby-N'],  ['door-lobby-N', 'lobby'],
+  ['corr-L', 'door-lobby-N'], ['door-lobby-N', 'lobby'],
   ['corr-R', 'hall-4'],
 
-  // ── Lobby hub (vestibule connecting left corridor to hallway and meeting room) ──
-  ['lobby', 'door-lobby-R'],   ['door-lobby-R', 'hall-1'],
-  ['lobby', 'door-lobby-S'],   ['door-lobby-S', 'meeting-room'],
+  // ── Lobby hub ──
+  ['lobby', 'door-lobby-R'],  ['door-lobby-R', 'hall-1'],
+  ['lobby', 'door-lobby-S'],  ['door-lobby-S', 'meeting-room'],
 
-  // ── Desk bottom doors → hallway ──
-  ['door-desk-L', 'hall-2'],   ['door-desk-R', 'hall-3'],
+  // ── Room bottom doors → hallway ──
+  ['door-lib-S', 'hall-2'],   ['door-studio-S', 'hall-3'],
 
   // ── Hallway spine (horizontal) ──
   ['hall-1', 'hall-2'],  ['hall-2', 'hall-3'],
   ['hall-3', 'hall-4'],  ['hall-4', 'hall-5'],
 
   // ── Lower rooms (hallway → door → interior) ──
-  ['hall-2', 'door-coffee'],    ['door-coffee', 'coffee'],
-  ['hall-3', 'door-lounge'],    ['hall-4', 'door-lounge'],
+  ['hall-2', 'door-coffee'],   ['door-coffee', 'coffee'],
+  ['hall-3', 'door-lounge'],   ['hall-4', 'door-lounge'],
   ['door-lounge', 'water-cooler'],
-  ['hall-5', 'door-server'],    ['door-server', 'server-room'],
+  ['hall-5', 'door-server'],   ['door-server', 'server-room'],
 ];
 
 // Build adjacency map once
@@ -238,6 +324,11 @@ function clientToCanvas(e) {
     x: ((e.clientX - rect.left - ox) / cw) * CANVAS_W,
     y: ((e.clientY - rect.top - oy) / ch) * CANVAS_H,
   };
+}
+
+/** Convert canvas coords to world coords (accounting for camera transform) */
+function canvasToWorld(cx, cy) {
+  return { x: (cx - camera.x) / camera.zoom, y: (cy - camera.y) / camera.zoom };
 }
 
 function wpDist(a, b) {
@@ -332,6 +423,40 @@ function findRoomAtPosition(x, y) {
     }
   }
   return null;
+}
+
+/** Check if a position is walkable (room interior, corridor, or door — but not furniture) */
+function isWalkable(x, y) {
+  // 1. Check room interiors (rooms inset by WALL thickness)
+  let inZone = false;
+  for (const r of ROOMS) {
+    if (x >= r.x + WALL && x <= r.x + r.w - WALL &&
+        y >= r.y + WALL && y <= r.y + r.h - WALL) {
+      inZone = true; break;
+    }
+  }
+  // 2. Check corridors
+  if (!inZone) {
+    for (const c of CORRIDORS) {
+      if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+        inZone = true; break;
+      }
+    }
+  }
+  // 3. Check door openings
+  if (!inZone) {
+    for (const d of DOOR_OPENINGS) {
+      if (x >= d.x && x <= d.x + d.w && y >= d.y && y <= d.y + d.h) {
+        inZone = true; break;
+      }
+    }
+  }
+  if (!inZone) return false;
+  // 4. Block if inside furniture
+  for (const f of FURNITURE_COLLIDERS) {
+    if (x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h) return false;
+  }
+  return true;
 }
 
 // --- Login / PIN ---
@@ -568,6 +693,7 @@ async function init() {
       // Two-finger scroll = pan
       cameraTarget.x -= e.deltaX * 0.3;
       cameraTarget.y -= e.deltaY * 0.3;
+      cameraFollow = null; // scroll pan breaks follow
     }
   }, { passive: false });
 
@@ -612,6 +738,7 @@ async function init() {
       cameraTarget.x += pos.x - panLast.x;
       cameraTarget.y += pos.y - panLast.y;
       panLast = pos;
+      cameraFollow = null; // manual pan breaks follow
     }
   });
 
@@ -629,23 +756,59 @@ async function init() {
   app.canvas.addEventListener('dblclick', () => {
     if (viewMode === 'building') return;
     cameraTarget = { x: 0, y: 0, zoom: 1 };
+    cameraFollow = null;
   });
 
-  // Canvas click for building view
+  // Canvas click for building view + bee follow
   app.canvas.addEventListener('click', (e) => {
-    if (viewMode !== 'building' || buildingTransition < 0.8) return;
-    const rect = app.canvas.getBoundingClientRect();
-    const scaleX = CANVAS_W / rect.width;
-    const scaleY = CANVAS_H / rect.height;
-    const cx = (e.clientX - rect.left) * scaleX;
-    const cy = (e.clientY - rect.top) * scaleY;
-    for (const area of buildingClickAreas) {
-      if (cx >= area.x && cx <= area.x + area.w && cy >= area.y && cy <= area.y + area.h) {
-        exitBuildingView(area.project);
-        break;
+    if (viewMode === 'building') {
+      if (buildingTransition < 0.8) return;
+      const rect = app.canvas.getBoundingClientRect();
+      const scaleX = CANVAS_W / rect.width;
+      const scaleY = CANVAS_H / rect.height;
+      const cx = (e.clientX - rect.left) * scaleX;
+      const cy = (e.clientY - rect.top) * scaleY;
+      for (const area of buildingClickAreas) {
+        if (cx >= area.x && cx <= area.x + area.w && cy >= area.y && cy <= area.y + area.h) {
+          exitBuildingView(area.project);
+          break;
+        }
       }
+      return;
     }
+
+    // Click-to-follow bee
+    const canvasPos = clientToCanvas(e);
+    const worldPos = canvasToWorld(canvasPos.x, canvasPos.y);
+    let closest = null, closestDist = 40;
+
+    // Check all bees
+    const allBees = [
+      ...(playerBee ? [playerBee] : []),
+      ...Object.values(localBees),
+      ...Object.values(ambientBees),
+    ];
+    for (const bee of allBees) {
+      if (!bee.gfx) continue;
+      const d = Math.hypot(bee.drawX - worldPos.x, bee.drawY - worldPos.y);
+      if (d < closestDist) { closestDist = d; closest = bee; }
+    }
+    cameraFollow = closest; // null if no bee nearby = free cam
   });
+
+  // --- Mouse tracking for edge panning ---
+  app.canvas.addEventListener('mousemove', (e) => {
+    const rect = app.canvas.getBoundingClientRect();
+    mouseViewX = e.clientX - rect.left;
+    mouseViewY = e.clientY - rect.top;
+    mouseInCanvas = true;
+  });
+  app.canvas.addEventListener('mouseleave', () => { mouseInCanvas = false; });
+
+  // --- Follow indicator ring ---
+  followIndicator = new Graphics();
+  followIndicator.visible = false;
+  layers.ui.addChild(followIndicator);
 
   // --- Player WASD / Arrow key handlers ---
   window.addEventListener('keydown', (e) => {
@@ -667,21 +830,23 @@ async function init() {
 // --- Room Doors ---
 // Each door: { room, edge: 'top'|'bottom'|'left'|'right', pos: fraction (0-1) along that wall, gap: px }
 const DOORS = [
-  // Upper rooms connect down to hallway
-  { room: 'phone-a',     edge: 'bottom', pos: 0.5, gap: 30 },
-  { room: 'desk',        edge: 'bottom', pos: 0.25, gap: 36 },  // left corridor
-  { room: 'desk',        edge: 'bottom', pos: 0.65, gap: 36 },  // right corridor
-  { room: 'desk',        edge: 'left',   pos: 0.3,  gap: 36 },  // side entrance from left corridor
-  { room: 'desk',        edge: 'right',  pos: 0.3,  gap: 36 },  // side entrance from right corridor
-  { room: 'phone-b',     edge: 'bottom', pos: 0.5, gap: 30 },
-  // Lower rooms connect up to hallway
-  { room: 'lobby',       edge: 'top', pos: 0.7, gap: 30 },
-  { room: 'lobby',       edge: 'right', pos: 0.5, gap: 24 },    // opens to main hallway
-  { room: 'lobby',       edge: 'bottom', pos: 0.5, gap: 30 },   // connects to meeting-room
+  // Upper rooms
+  { room: 'web-booth',    edge: 'bottom', pos: 0.5, gap: 30 },
+  { room: 'library',      edge: 'bottom', pos: 0.5, gap: 36 },   // library south
+  { room: 'library',      edge: 'left',   pos: 0.5, gap: 36 },   // library west (from left corridor)
+  { room: 'library',      edge: 'right',  pos: 0.5, gap: 36 },   // library→studio glass divider
+  { room: 'studio',       edge: 'left',   pos: 0.5, gap: 36 },   // studio←library glass divider
+  { room: 'studio',       edge: 'bottom', pos: 0.5, gap: 36 },   // studio south
+  { room: 'studio',       edge: 'right',  pos: 0.5, gap: 36 },   // studio east (to right corridor)
+  { room: 'phone-b',      edge: 'bottom', pos: 0.5, gap: 30 },
+  // Lower rooms
+  { room: 'lobby',        edge: 'top', pos: 0.7, gap: 30 },
+  { room: 'lobby',        edge: 'right', pos: 0.5, gap: 24 },
+  { room: 'lobby',        edge: 'bottom', pos: 0.5, gap: 30 },
   { room: 'meeting-room', edge: 'top', pos: 0.5, gap: 36 },
-  { room: 'coffee',      edge: 'top', pos: 0.5, gap: 36 },
+  { room: 'coffee',       edge: 'top', pos: 0.5, gap: 36 },
   { room: 'water-cooler', edge: 'top', pos: 0.4, gap: 36 },
-  { room: 'server-room', edge: 'top', pos: 0.5, gap: 36 },
+  { room: 'server-room',  edge: 'top', pos: 0.5, gap: 36 },
 ];
 
 // Pre-index doors by room ID
@@ -694,15 +859,24 @@ for (const d of DOORS) {
 // --- Furniture Interaction Points ---
 // Specific coordinates where bees sit/stand at furniture
 const INTERACTION_POINTS = {
-  'desk': [
-    // 6 desks: 2 rows of 3 — chairs are at y+70 from desk top
-    { x: 355, y: 160, type: 'chair', facing: 'up' },   // row 0, col 0
-    { x: 525, y: 160, type: 'chair', facing: 'up' },   // row 0, col 1
-    { x: 695, y: 160, type: 'chair', facing: 'up' },   // row 0, col 2
-    { x: 355, y: 290, type: 'chair', facing: 'up' },   // row 1, col 0
-    { x: 525, y: 290, type: 'chair', facing: 'up' },   // row 1, col 1
-    { x: 695, y: 290, type: 'chair', facing: 'up' },   // row 1, col 2
-    { x: 860, y: 140, type: 'stand', facing: 'up' },   // standing desk
+  'library': [
+    // Chair positions at reading desks (dx+60, dy+70 from desk origin)
+    { x: 340, y: 272, type: 'chair', facing: 'up' },   // desk 1 chair (desk at 280,200)
+    { x: 340, y: 372, type: 'chair', facing: 'up' },   // desk 2 chair (desk at 280,300)
+    // Standing in front of bookshelves (below shelf bottom edge at y:175)
+    { x: 295, y: 182, type: 'stand', facing: 'up' },   // browsing bookshelf 1
+    { x: 405, y: 182, type: 'stand', facing: 'up' },   // browsing bookshelf 2
+    // Armchair (center of armchair at 462,286 + offset)
+    { x: 490, y: 314, type: 'chair', facing: 'left' },  // armchair
+  ],
+  'studio': [
+    // Chair positions at workstation desks (x+65, y+70 from drawDesk origin)
+    { x: 645, y: 145, type: 'chair', facing: 'up' },   // desk 1 chair (desk at 580,70)
+    { x: 765, y: 145, type: 'chair', facing: 'up' },   // desk 2 chair (desk at 700,70)
+    { x: 645, y: 275, type: 'chair', facing: 'up' },   // desk 3 chair (desk at 580,200)
+    { x: 765, y: 275, type: 'chair', facing: 'up' },   // desk 4 chair (desk at 700,200)
+    // Standing desk (below desk at 790,100)
+    { x: 817, y: 155, type: 'stand', facing: 'up' },   // standing desk
   ],
   'meeting-room': [
     // Conference table chairs (5 each side)
@@ -718,41 +892,54 @@ const INTERACTION_POINTS = {
     { x: 200, y: 598, type: 'chair', facing: 'up' },
   ],
   'coffee': [
-    // Bar stools
     { x: 360, y: 568, type: 'stool', facing: 'up' },
     { x: 410, y: 568, type: 'stool', facing: 'up' },
     { x: 460, y: 568, type: 'stool', facing: 'up' },
     { x: 510, y: 568, type: 'stool', facing: 'up' },
-    // Near espresso machine
     { x: 385, y: 500, type: 'stand', facing: 'down' },
+    { x: 450, y: 530, type: 'stand', facing: 'up' },    // fruit water dispenser 1
+    { x: 508, y: 530, type: 'stand', facing: 'up' },    // fruit water dispenser 2
   ],
   'water-cooler': [
-    // L-shaped sofa spots
     { x: 700, y: 545, type: 'sofa', facing: 'down' },
     { x: 750, y: 545, type: 'sofa', facing: 'down' },
     { x: 800, y: 545, type: 'sofa', facing: 'down' },
     { x: 675, y: 570, type: 'sofa', facing: 'right' },
     { x: 675, y: 610, type: 'sofa', facing: 'right' },
-    // Standing near coffee table
     { x: 760, y: 600, type: 'stand', facing: 'down' },
   ],
   'server-room': [
-    // Near server racks
     { x: 1030, y: 540, type: 'stand', facing: 'right' },
     { x: 1075, y: 540, type: 'stand', facing: 'right' },
     { x: 1050, y: 600, type: 'stand', facing: 'up' },
   ],
-  'phone-a': [
-    { x: 77, y: 85, type: 'chair', facing: 'down' },
+  'web-booth': [
+    { x: 77, y: 100, type: 'chair', facing: 'up' },   // chair below desk (desk at 52,58)
   ],
   'phone-b': [
-    { x: 1097, y: 85, type: 'chair', facing: 'down' },
+    { x: 1097, y: 100, type: 'chair', facing: 'up' },   // chair below desk (booth desk at 1075,65)
   ],
   'lobby': [
     { x: 100, y: 425, type: 'stand', facing: 'right' },
     { x: 160, y: 435, type: 'stand', facing: 'left' },
   ],
 };
+
+// Desk-to-monitor mapping — links chair positions to monitor screen rects
+const DESK_MONITORS = [
+  // Studio workstation desks (drawDesk at 580/700, 70/200 → screen at x+38,y+8,54,26)
+  { chairX: 645, chairY: 145, mx: 618, my: 78,  mw: 54, mh: 26 },
+  { chairX: 765, chairY: 145, mx: 738, my: 78,  mw: 54, mh: 26 },
+  { chairX: 645, chairY: 275, mx: 618, my: 208, mw: 54, mh: 26 },
+  { chairX: 765, chairY: 275, mx: 738, my: 208, mw: 54, mh: 26 },
+  // Standing desk (790,100 → screen at 798,108,39,22)
+  { chairX: 817, chairY: 155, mx: 798, my: 108, mw: 39, mh: 22 },
+  // Web booth (52,58 → screen at 60,64,34,16)
+  { chairX: 77,  chairY: 100, mx: 60,  my: 64,  mw: 34, mh: 16 },
+  // Focus booth (1075,65 → screen at 1086,68,23,12)
+  { chairX: 1097, chairY: 100, mx: 1086, my: 68, mw: 23, mh: 12 },
+];
+let monitorScreenOverlays = []; // Graphics objects for active monitor screens
 
 // Track which interaction points are occupied { 'room:index' -> beeId }
 const occupiedPoints = {};
@@ -788,11 +975,45 @@ function findInteractionPoint(roomId, beeId, isQueen) {
   return { x: pt.x + (Math.random() - 0.5) * 20, y: pt.y + (Math.random() - 0.5) * 20, type: 'stand', facing: pt.facing };
 }
 
+/** Find nearest interaction point type within radius. Returns {type, room} or null. */
+function findNearestInteractionInfo(x, y, roomId) {
+  const points = INTERACTION_POINTS[roomId];
+  if (!points) return null;
+  let best = null, bestDist = 35; // 35px radius
+  for (const pt of points) {
+    const d = Math.hypot(pt.x - x, pt.y - y);
+    if (d < bestDist) { bestDist = d; best = pt; }
+  }
+  return best;
+}
+
+/** Map interaction point + room context to a bee activity */
+function interactionToActivity(point, roomId) {
+  if (!point) return 'idle';
+  const t = point.type;
+  switch (roomId) {
+    case 'studio':
+      return (t === 'chair' || t === 'stand') ? 'coding' : 'idle';
+    case 'library':
+      return (t === 'chair' || t === 'stand') ? 'reading' : 'idle';
+    case 'coffee':
+      return 'drinking-coffee';
+    case 'water-cooler':
+      return t === 'sofa' ? 'chatting' : 'idle';
+    case 'server-room':
+      return 'running-command';
+    case 'meeting-room':
+      return 'presenting';
+    default:
+      return 'idle';
+  }
+}
+
 // --- Bee Expressions ---
 /** Map activity to expression */
 function activityToExpression(activity) {
   switch (activity) {
-    case 'coding': case 'reading': case 'searching': case 'running-command': case 'thinking':
+    case 'coding': case 'reading': case 'searching': case 'browsing': case 'running-command': case 'thinking':
       return 'focused';
     case 'presenting': case 'celebrating': case 'arriving':
       return 'happy';
@@ -814,6 +1035,16 @@ function facingToEyeOffset(facing) {
   }
 }
 
+/** Flip bee horizontally to face left or right. Counter-flips label and bubble so text stays readable. */
+function flipBee(bee, facingLeft) {
+  const gfx = bee.gfx;
+  if (!gfx) return;
+  const absX = Math.abs(gfx.scale.x) || 1;
+  gfx.scale.x = facingLeft ? -absX : absX;
+  if (gfx._label) gfx._label.scale.x = facingLeft ? -1 : 1;
+  if (gfx._bubble) gfx._bubble.scale.x = facingLeft ? -1 : 1;
+}
+
 /** Draw bee face (eyes, mouth, blush) — redrawn on expression/facing changes */
 function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
   g.clear();
@@ -831,8 +1062,8 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.circle(9*s+ox, -27*s+oy, 2*s).fill(0xffffff);
       // Flat mouth
       g.moveTo(-3*s, -17*s).lineTo(3*s, -17*s).stroke({ color: 0x78716c, width: 1.5*s });
-      g.ellipse(-14*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
-      g.ellipse(14*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
+      g.ellipse(-12*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
+      g.ellipse(12*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.25 });
       break;
 
     case 'happy':
@@ -846,8 +1077,8 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.circle(9*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
       g.circle(5*s+ox, -24*s+oy, 1.5*s).fill(0xffffff);
       g.arc(0, -18*s, 5*s, 0.1, Math.PI - 0.1).stroke({ color: 0x78716c, width: 1.8*s });
-      g.ellipse(-14*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
-      g.ellipse(14*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
+      g.ellipse(-12*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
+      g.ellipse(12*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.55 });
       break;
 
     case 'sleepy':
@@ -857,8 +1088,8 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.ellipse(7*s, -26*s, 6*s, 3*s).fill(0xffffff);
       g.moveTo(2*s, -26*s).lineTo(12*s, -26*s).stroke({ color: 0x1a1a1a, width: 2*s });
       g.arc(0, -18*s, 3*s, 0.2, Math.PI - 0.2).stroke({ color: 0x78716c, width: 1.2*s });
-      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
-      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
+      g.ellipse(-12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
+      g.ellipse(12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.4 });
       // Zzz
       g.moveTo(16*s, -37*s).lineTo(22*s, -37*s).lineTo(16*s, -32*s).lineTo(22*s, -32*s)
        .stroke({ color: 0x78716c, width: 1*s, alpha: 0.5 });
@@ -874,8 +1105,8 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.circle(9*s+ox, -28*s+oy, 2*s).fill(0xffffff);
       g.ellipse(0, -16*s, 3*s, 3.5*s).fill(0x78716c);
       g.ellipse(0, -16*s, 2*s, 2.5*s).fill(0x4a4540);
-      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
-      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
+      g.ellipse(-12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
+      g.ellipse(12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
       break;
 
     default: // neutral
@@ -888,8 +1119,8 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.circle(9*s+ox, -28*s+oy, 2.5*s).fill(0xffffff);
       g.circle(5*s+ox, -24*s+oy, 1.2*s).fill(0xffffff);
       g.arc(0, -18*s, 4*s, 0.15, Math.PI - 0.15).stroke({ color: 0x78716c, width: 1.5*s });
-      g.ellipse(-14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
-      g.ellipse(14*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      g.ellipse(-12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      g.ellipse(12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
       break;
   }
 }
@@ -913,25 +1144,22 @@ const doorStates = DOORS.map(() => ({ openAmount: 0, panelGfx: null, cx: 0, cy: 
 // --- Floor ---
 function drawFloor() {
   const g = new Graphics();
-  // Herringbone wood pattern
+  // Dark floor base
   g.rect(0, 0, CANVAS_W, CANVAS_H).fill(P.floor);
+  // Grid — visible tile pattern
   for (let y = 0; y < CANVAS_H; y += 20) {
-    g.moveTo(0, y).lineTo(CANVAS_W, y).stroke({ color: P.floorLine, width: 0.5, alpha: 0.3 });
+    g.moveTo(0, y).lineTo(CANVAS_W, y).stroke({ color: P.floorLine, width: 0.6, alpha: 0.5 });
   }
   for (let x = 0; x < CANVAS_W; x += 40) {
-    g.moveTo(x, 0).lineTo(x, CANVAS_H).stroke({ color: P.floorLine, width: 0.5, alpha: 0.15 });
+    g.moveTo(x, 0).lineTo(x, CANVAS_H).stroke({ color: P.floorLine, width: 0.5, alpha: 0.3 });
   }
 
   // Vignette — darken edges for depth
-  const VIG = 120;
-  // Top
-  g.rect(0, 0, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.15 });
-  // Bottom
-  g.rect(0, CANVAS_H - VIG, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.2 });
-  // Left
-  g.rect(0, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.1 });
-  // Right
-  g.rect(CANVAS_W - VIG, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.1 });
+  const VIG = 100;
+  g.rect(0, 0, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.12 });
+  g.rect(0, CANVAS_H - VIG, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.15 });
+  g.rect(0, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.08 });
+  g.rect(CANVAS_W - VIG, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.08 });
 
   layers.floor.addChild(g);
 }
@@ -960,35 +1188,113 @@ function drawRooms() {
     wallBase.lineTo(x + w - r, y + h + WALL_H);
     wallBase.lineTo(x + r, y + h + WALL_H);
     wallBase.closePath();
-    wallBase.fill({ color: 0x0a0a18, alpha: 0.5 });
+    wallBase.fill({ color: P.dark, alpha: 0.5 });
     // Right wall face
     wallBase.moveTo(x + w, y + r);
     wallBase.lineTo(x + w, y + h - r);
     wallBase.lineTo(x + w + WALL_H * 0.6, y + h - r + WALL_H * 0.6);
     wallBase.lineTo(x + w + WALL_H * 0.6, y + r + WALL_H * 0.6);
     wallBase.closePath();
-    wallBase.fill({ color: 0x0a0a18, alpha: 0.35 });
+    wallBase.fill({ color: P.dark, alpha: 0.35 });
     c.addChild(wallBase);
 
-    // ── Floor fill with lighting gradient ──
+    // ── Floor fill — bright enough to read as a room, not a hole ──
     const bg = new Graphics();
-    bg.roundRect(x, y, w, h, r).fill({ color: room.color, alpha: 0.5 });
+    bg.roundRect(x, y, w, h, r).fill({ color: room.color, alpha: 0.85 });
+    // Interior warmth — rooms feel lit from overhead
+    bg.roundRect(x + 4, y + 4, w - 8, h - 8, r).fill({ color: 0xffffff, alpha: 0.06 });
     // Top-left highlight (simulated light source)
-    bg.roundRect(x, y, w * 0.5, h * 0.4, r).fill({ color: 0xffffff, alpha: 0.03 });
+    bg.roundRect(x + 2, y + 2, w * 0.55, h * 0.45, r).fill({ color: 0xffffff, alpha: 0.08 });
     // Bottom-right darkening
-    bg.roundRect(x + w * 0.4, y + h * 0.5, w * 0.6, h * 0.5, r).fill({ color: 0x000000, alpha: 0.06 });
+    bg.roundRect(x + w * 0.35, y + h * 0.45, w * 0.63, h * 0.53, r).fill({ color: 0x000000, alpha: 0.10 });
     c.addChild(bg);
+
+    // ── Per-room floor pattern ──
+    const fp = new Graphics();
+    const pad = 6; // inset from walls
+    if (room.id === 'library') {
+      // Herringbone parquet
+      for (let row = 0; row < Math.ceil(h / 16); row++) {
+        for (let col = 0; col < Math.ceil(w / 12); col++) {
+          const px = x + pad + col * 12;
+          const py = y + pad + row * 16;
+          if (px + 10 > x + w - pad || py + 10 > y + h - pad) continue;
+          const even = (row + col) % 2 === 0;
+          fp.rect(px, py, even ? 10 : 5, even ? 5 : 10)
+            .fill({ color: even ? 0x5A4D3A : 0x4A3F30, alpha: 0.12 });
+        }
+      }
+    } else if (room.id === 'studio') {
+      // Concrete grid tiles
+      const ts = 40;
+      for (let ty = y + pad; ty < y + h - pad; ty += ts) {
+        for (let tx = x + pad; tx < x + w - pad; tx += ts) {
+          const tw = Math.min(ts - 2, x + w - pad - tx);
+          const th = Math.min(ts - 2, y + h - pad - ty);
+          if (tw > 4 && th > 4) {
+            fp.roundRect(tx, ty, tw, th, 1)
+              .stroke({ color: 0xffffff, width: 0.5, alpha: 0.04 });
+          }
+        }
+      }
+    } else if (room.id === 'coffee') {
+      // Black & white checker
+      const cs = 20;
+      for (let ty = y + pad; ty < y + h - pad; ty += cs) {
+        for (let tx = x + pad; tx < x + w - pad; tx += cs) {
+          const dark = ((Math.floor((tx - x) / cs) + Math.floor((ty - y) / cs)) % 2 === 0);
+          const cw = Math.min(cs, x + w - pad - tx);
+          const ch = Math.min(cs, y + h - pad - ty);
+          if (cw > 2 && ch > 2) {
+            fp.rect(tx, ty, cw, ch).fill({ color: dark ? 0x000000 : 0xffffff, alpha: dark ? 0.08 : 0.04 });
+          }
+        }
+      }
+    } else if (room.id === 'meeting-room') {
+      // Carpet lines
+      for (let ty = y + pad; ty < y + h - pad; ty += 8) {
+        fp.moveTo(x + pad, ty).lineTo(x + w - pad, ty)
+          .stroke({ color: room.accent, width: 0.5, alpha: 0.06 });
+      }
+    } else if (room.id === 'water-cooler') {
+      // Diagonal wood planks
+      for (let i = -h; i < w + h; i += 14) {
+        fp.moveTo(x + Math.max(pad, i), y + pad + Math.max(0, -i))
+          .lineTo(x + Math.min(w - pad, i + h), y + h - pad)
+          .stroke({ color: 0xffffff, width: 0.6, alpha: 0.04 });
+      }
+    } else if (room.id === 'server-room') {
+      // Raised floor grid with vent dots
+      const ts = 24;
+      for (let ty = y + pad; ty < y + h - pad; ty += ts) {
+        for (let tx = x + pad; tx < x + w - pad; tx += ts) {
+          const tw = Math.min(ts - 2, x + w - pad - tx);
+          const th = Math.min(ts - 2, y + h - pad - ty);
+          if (tw > 4 && th > 4) {
+            fp.roundRect(tx, ty, tw, th, 1)
+              .stroke({ color: room.accent, width: 0.5, alpha: 0.08 });
+            fp.circle(tx + tw / 2, ty + th / 2, 1.5)
+              .fill({ color: room.accent, alpha: 0.06 });
+          }
+        }
+      }
+    } else if (room.id === 'lobby') {
+      // Marble veining
+      for (let i = 0; i < 5; i++) {
+        const sx = x + pad + (i * 41 % (w - 2 * pad));
+        fp.moveTo(sx, y + pad)
+          .quadraticCurveTo(sx + 30, y + h / 2, sx + 10, y + h - pad)
+          .stroke({ color: 0xffffff, width: 0.5, alpha: 0.03 });
+      }
+    }
+    c.addChild(fp);
 
     // ── Ambient occlusion — inner shadow along walls ──
     const ao = new Graphics();
-    // Top inner shadow
-    ao.rect(x + r, y, w - 2 * r, 6).fill({ color: 0x000000, alpha: 0.1 });
-    // Left inner shadow
-    ao.rect(x, y + r, 5, h - 2 * r).fill({ color: 0x000000, alpha: 0.08 });
-    // Bottom inner shadow (darker — opposite light)
-    ao.rect(x + r, y + h - 8, w - 2 * r, 8).fill({ color: 0x000000, alpha: 0.15 });
-    // Right inner shadow
-    ao.rect(x + w - 6, y + r, 6, h - 2 * r).fill({ color: 0x000000, alpha: 0.12 });
+    ao.rect(x + r, y, w - 2 * r, 8).fill({ color: 0x000000, alpha: 0.18 });
+    ao.rect(x, y + r, 6, h - 2 * r).fill({ color: 0x000000, alpha: 0.14 });
+    ao.rect(x + r, y + h - 10, w - 2 * r, 10).fill({ color: 0x000000, alpha: 0.22 });
+    ao.rect(x + w - 7, y + r, 7, h - 2 * r).fill({ color: 0x000000, alpha: 0.18 });
     c.addChild(ao);
 
     // ── Glass partition walls with door gaps ──
@@ -1001,8 +1307,8 @@ function drawRooms() {
       gapsByEdge[d.edge].push(d);
     }
 
-    // Main wall stroke — thicker for depth
-    const wallStyle = { color: P.glassBrd, width: 3, alpha: 0.6 };
+    // Main wall stroke — visible glass partitions
+    const wallStyle = { color: P.glassBrd, width: 3, alpha: 0.8 };
 
     // Top wall
     drawWallWithGaps(walls, x + r, y, x + w - r, y, gapsByEdge.top, w - 2 * r, wallStyle);
@@ -1014,7 +1320,7 @@ function drawRooms() {
     drawWallWithGaps(walls, x + w, y + r, x + w, y + h - r, gapsByEdge.right, h - 2 * r, wallStyle, true);
 
     // Glass reflection highlight (thin bright line inside wall)
-    const reflStyle = { color: 0xffffff, width: 1, alpha: 0.08 };
+    const reflStyle = { color: 0xffffff, width: 1, alpha: 0.15 };
     drawWallWithGaps(walls, x + r, y + 1, x + w - r, y + 1, gapsByEdge.top, w - 2 * r, reflStyle);
     drawWallWithGaps(walls, x + 1, y + r, x + 1, y + h - r, gapsByEdge.left, h - 2 * r, reflStyle, true);
 
@@ -1039,37 +1345,24 @@ function drawRooms() {
       } else {
         cx = x + w; cy = y + r + (h - 2 * r) * d.pos;
       }
-      doorGfx.circle(cx, cy, halfGap * 0.6).fill({ color: P.honey, alpha: 0.08 });
+      doorGfx.circle(cx, cy, halfGap * 0.7).fill({ color: P.honey, alpha: 0.12 });
       if (d.edge === 'top' || d.edge === 'bottom') {
-        doorGfx.rect(cx - halfGap, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
-        doorGfx.rect(cx + halfGap - 3, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+        doorGfx.rect(cx - halfGap, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.45 });
+        doorGfx.rect(cx + halfGap - 3, cy - 1.5, 3, 3).fill({ color: P.honey, alpha: 0.45 });
       } else {
-        doorGfx.rect(cx - 1.5, cy - halfGap, 3, 3).fill({ color: P.honey, alpha: 0.3 });
-        doorGfx.rect(cx - 1.5, cy + halfGap - 3, 3, 3).fill({ color: P.honey, alpha: 0.3 });
+        doorGfx.rect(cx - 1.5, cy - halfGap, 3, 3).fill({ color: P.honey, alpha: 0.45 });
+        doorGfx.rect(cx - 1.5, cy + halfGap - 3, 3, 3).fill({ color: P.honey, alpha: 0.45 });
       }
     }
     c.addChild(doorGfx);
 
     // ── Accent strip (top edge — raised look with highlight) ──
     const strip = new Graphics();
-    strip.roundRect(x, y - 2, w, 5, 2).fill(room.accent);
-    strip.roundRect(x, y - 2, w, 2, 1).fill({ color: 0xffffff, alpha: 0.15 });
+    strip.roundRect(x, y - 3, w, 6, 2).fill(room.accent);
+    strip.roundRect(x, y - 3, w, 2, 1).fill({ color: 0xffffff, alpha: 0.25 });
+    // Subtle glow below accent
+    strip.roundRect(x + 2, y + 3, w - 4, 6, 2).fill({ color: room.accent, alpha: 0.10 });
     c.addChild(strip);
-
-    // ── Room label ──
-    const label = new Text({
-      text: room.label,
-      style: new TextStyle({
-        fontFamily: 'Inter, sans-serif',
-        fontSize: 11,
-        fontWeight: '600',
-        fill: 0x7A746D,
-        letterSpacing: 0.5,
-      }),
-    });
-    label.x = x + 8;
-    label.y = y + 10;
-    c.addChild(label);
 
     layers.rooms.addChild(c);
   }
@@ -1110,128 +1403,167 @@ function drawWallWithGaps(g, x1, y1, x2, y2, doors, wallLen, style, vertical = f
 
 // --- Furniture ---
 /** Draw a soft drop shadow under a rectangle */
-function drawShadow(g, x, y, w, h, r = 4, alpha = 0.2) {
-  g.roundRect(x + 4, y + 4, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.6 });
-  g.roundRect(x + 2, y + 2, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.3 });
+function drawShadow(g, x, y, w, h, r = 4, alpha = 0.25) {
+  g.roundRect(x + 7, y + 7, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.25 });
+  g.roundRect(x + 4, y + 4, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.55 });
+  g.roundRect(x + 2, y + 2, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.35 });
 }
 
 function drawFurniture() {
   const g = new Graphics();
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TEAM OFFICE — 6 desks in 2 rows of 3 + standing desk
+  // LIBRARY (250,40,280,340) — bookshelves, reading desks, armchair, lamps
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Ceiling light fixtures (soft overhead glow pools)
-  for (let col = 0; col < 3; col++) {
-    const lx = 355 + col * 170;
-    g.ellipse(lx, 165, 50, 25).fill({ color: 0xffffff, alpha: 0.015 });
-    g.roundRect(lx - 20, 155, 40, 4, 2).fill({ color: 0xffffff, alpha: 0.04 }); // fixture
-  }
-
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 3; col++) {
-      const dx = 290 + col * 170;
-      const dy = 90 + row * 130;
-      drawDesk(g, dx, dy);
-    }
-  }
-
-  // Standing desk (tall desk at end of row)
-  const sdx = 830, sdy = 110;
-  drawShadow(g, sdx, sdy, 60, 50, 4, 0.15);
-  g.roundRect(sdx, sdy, 60, 50, 4).fill(0xddd5c8);
-  g.roundRect(sdx, sdy, 60, 50, 4).stroke({ width: 1, color: P.woodDark });
-  g.roundRect(sdx + 8, sdy + 6, 44, 28, 2).fill(P.monitor);
-  g.roundRect(sdx + 10, sdy + 8, 40, 24, 1).fill(0x60a5fa);
-  g.roundRect(sdx + 8, sdy + 38, 44, 8, 2).fill(P.wood);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CONFERENCE ROOM
-  // ═══════════════════════════════════════════════════════════════════════════
-  drawShadow(g, 70, 530, 140, 60, 6, 0.2);
-  g.roundRect(70, 530, 140, 60, 6).fill(P.wood);
-  g.roundRect(70, 530, 140, 3, 3).fill({ color: 0xffffff, alpha: 0.06 }); // table top edge
-  g.roundRect(72, 532, 136, 56, 5).fill({ color: P.woodDark, alpha: 0.3 });
-  // Table legs (3D thickness — bottom face)
-  g.rect(74, 590, 132, 4).fill({ color: 0x000000, alpha: 0.2 });
-  for (let i = 0; i < 5; i++) {
-    // Chair shadows
-    g.ellipse(80 + i * 30, 526, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
-    g.ellipse(80 + i * 30, 600, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
-    g.circle(80 + i * 30, 524, 7).fill(P.wallDark);
-    g.circle(80 + i * 30, 598, 7).fill(P.wallDark);
-  }
-  // Whiteboard with shadow
-  drawShadow(g, 46, 480, 6, 60, 2, 0.1);
-  g.roundRect(46, 480, 6, 60, 2).fill(P.white);
-  g.roundRect(46, 480, 6, 60, 2).stroke({ color: P.wallDark, width: 1 });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // LIBRARY — bookshelves + reading nook + phone booth
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Bookshelves along left wall (inside library)
   const bookColors = [0xef4444, 0x3b82f6, 0x22c55e, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xf97316];
-  for (let i = 0; i < 3; i++) {
-    const bx = 1030 + i * 130;
-    drawShadow(g, bx, 100, 100, 140, 4, 0.18);
-    // 3D side panel (right face of bookshelf)
-    g.moveTo(bx + 100, 100).lineTo(bx + 106, 96).lineTo(bx + 106, 236).lineTo(bx + 100, 240).closePath();
-    g.fill({ color: 0x2a1e12, alpha: 0.6 });
+  for (let i = 0; i < 2; i++) {
+    const bx = 260 + i * 110;
+    drawShadow(g, bx, 55, 90, 120, 4, 0.3);
+    // 3D side panel
+    g.moveTo(bx + 90, 55).lineTo(bx + 96, 51).lineTo(bx + 96, 174).lineTo(bx + 90, 178).closePath();
+    g.fill({ color: P.woodDark, alpha: 0.7 });
     // 3D top face
-    g.moveTo(bx, 100).lineTo(bx + 6, 96).lineTo(bx + 106, 96).lineTo(bx + 100, 100).closePath();
-    g.fill({ color: 0x8b6f4e, alpha: 0.4 });
-    g.roundRect(bx, 100, 100, 140, 4).fill(P.woodDark);
-    g.roundRect(bx, 100, 100, 140, 4).stroke({ width: 1, color: 0x6b5545 });
-    g.rect(bx + 4, 104, 92, 132).fill(0xf5f0eb);
+    g.moveTo(bx, 55).lineTo(bx + 6, 51).lineTo(bx + 96, 51).lineTo(bx + 90, 55).closePath();
+    g.fill({ color: P.wood, alpha: 0.5 });
+    g.roundRect(bx, 55, 90, 120, 4).fill(P.woodDark);
+    g.roundRect(bx, 55, 90, 120, 4).stroke({ width: 2, color: P.wood });
+    g.rect(bx + 4, 59, 82, 112).fill({ color: 0x3A352E, alpha: 0.6 });
     for (let shelf = 0; shelf < 3; shelf++) {
-      g.rect(bx + 2, 104 + shelf * 44 + 40, 96, 3).fill(P.woodDark);
-      // Shelf shadow underneath
-      g.rect(bx + 4, 104 + shelf * 44 + 43, 90, 3).fill({ color: 0x000000, alpha: 0.08 });
-      for (let b = 0; b < 7; b++) {
-        const bh = 28 + ((b * 7 + shelf * 3 + i * 5) % 8);
-        g.roundRect(bx + 8 + b * 13, 104 + shelf * 44 + (40 - bh), 10, bh, 1)
+      g.rect(bx + 2, 59 + shelf * 38 + 34, 86, 3).fill(P.woodDark);
+      g.rect(bx + 4, 59 + shelf * 38 + 37, 80, 2).fill({ color: 0x000000, alpha: 0.08 });
+      for (let b = 0; b < 6; b++) {
+        const bh = 22 + ((b * 7 + shelf * 3 + i * 5) % 8);
+        g.roundRect(bx + 8 + b * 14, 59 + shelf * 38 + (34 - bh), 10, bh, 1)
           .fill(bookColors[(b + shelf + i) % bookColors.length]);
       }
     }
   }
 
-  // Reading nook (cozy armchair)
-  g.ellipse(1070, 312, 32, 8).fill({ color: 0x000000, alpha: 0.12 }); // chair shadow
-  g.roundRect(1040, 260, 60, 50, 12).fill(P.cushion);
-  g.roundRect(1040, 260, 60, 4, 6).fill({ color: 0xffffff, alpha: 0.05 }); // backrest highlight
-  g.roundRect(1044, 264, 52, 42, 8).fill(0x5a7a50);
-  // Side table with lamp
-  g.ellipse(1120, 298, 18, 5).fill({ color: 0x000000, alpha: 0.1 }); // table shadow
-  g.circle(1120, 280, 16).fill(P.wood);
-  g.circle(1120, 280, 16).stroke({ width: 1, color: P.woodDark });
-  g.rect(1118, 264, 4, 12).fill(P.wallDark);
-  g.ellipse(1120, 260, 10, 6).fill(0xfef3c7);
-  // Lamp glow on table
-  g.ellipse(1120, 280, 20, 10).fill({ color: 0xfef3c7, alpha: 0.04 });
+  // Reading desks with desk lamps
+  for (let row = 0; row < 2; row++) {
+    const dx = 280;
+    const dy = 200 + row * 100;
+    drawShadow(g, dx, dy, 120, 50, 4, 0.25);
+    g.roundRect(dx, dy, 120, 50, 4).fill(P.wood);
+    g.roundRect(dx, dy, 120, 50, 4).stroke({ width: 1.5, color: P.woodDark });
+    g.roundRect(dx, dy, 120, 3, 2).fill({ color: 0xffffff, alpha: 0.12 });
+    // Desk lamp
+    g.rect(dx + 95, dy + 5, 3, 20).fill(P.wallDark);
+    g.ellipse(dx + 96, dy + 3, 12, 6).fill({ color: 0xD4A545, alpha: 0.9 });
+    g.ellipse(dx + 96, dy + 20, 20, 10).fill({ color: 0xD4A545, alpha: 0.06 }); // lamp glow
+    // Open book
+    g.roundRect(dx + 30, dy + 15, 40, 25, 2).fill({ color: 0xE8DED0, alpha: 0.8 });
+    g.roundRect(dx + 30, dy + 15, 40, 25, 2).stroke({ width: 0.5, color: P.wallDark });
+    g.rect(dx + 49, dy + 15, 1, 25).fill({ color: P.wallDark, alpha: 0.4 }); // spine
+    // Chair
+    g.ellipse(dx + 60, dy + 72, 16, 7).fill({ color: 0x000000, alpha: 0.18 });
+    g.circle(dx + 60, dy + 70, 13).fill(P.leather);
+    g.circle(dx + 60, dy + 70, 13).stroke({ width: 1, color: 0x5A3D22 });
+    g.circle(dx + 60, dy + 68, 11).fill({ color: 0xffffff, alpha: 0.04 });
+  }
 
-  // Phone booth (glass pod)
-  drawShadow(g, 1320, 100, 80, 100, 8, 0.15);
-  g.roundRect(1320, 100, 80, 100, 8).fill({ color: P.glass, alpha: 0.7 });
-  g.roundRect(1320, 100, 80, 100, 8).stroke({ width: 2, color: P.glassBrd });
-  g.roundRect(1330, 130, 60, 20, 3).fill(P.wood);
-  g.roundRect(1346, 110, 28, 18, 2).fill(P.monitor);
-  g.roundRect(1348, 112, 24, 14, 1).fill(P.monGlow);
-  g.circle(1360, 168, 10).fill(0x555555);
+  // Cozy armchair in corner
+  g.ellipse(490, 332, 30, 8).fill({ color: 0x000000, alpha: 0.18 });
+  g.roundRect(462, 286, 56, 44, 12).fill(P.cushion);
+  g.roundRect(462, 286, 56, 44, 12).stroke({ width: 1.5, color: 0x2D4A35 });
+  g.roundRect(462, 286, 56, 4, 6).fill({ color: 0xffffff, alpha: 0.08 });
+  g.roundRect(466, 290, 48, 36, 8).fill({ color: 0x4A7A52, alpha: 0.85 });
+  // Side table
+  drawShadow(g, 486, 246, 28, 28, 14, 0.15);
+  g.circle(500, 260, 14).fill(P.wood);
+  g.circle(500, 260, 14).stroke({ width: 1.5, color: P.woodDark });
+  g.rect(498, 246, 4, 10).fill(P.wallDark);
+  g.ellipse(500, 242, 9, 5).fill({ color: 0xD4A545, alpha: 0.7 }); // lamp shade
+  g.ellipse(500, 260, 16, 8).fill({ color: 0xD4A545, alpha: 0.03 }); // glow
+
+  // Ceiling warm lights in library
+  for (let i = 0; i < 2; i++) {
+    const lx = 340 + i * 100;
+    g.ellipse(lx, 180, 40, 20).fill({ color: 0xD4A545, alpha: 0.015 });
+    g.roundRect(lx - 16, 170, 32, 4, 2).fill({ color: 0xD4A545, alpha: 0.04 });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STUDIO (550,40,300,340) — workstation desks with monitors, standing desk
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Ceiling track lights (brighter than library)
+  for (let col = 0; col < 2; col++) {
+    const lx = 660 + col * 120;
+    g.ellipse(lx, 150, 45, 22).fill({ color: 0xffffff, alpha: 0.018 });
+    g.roundRect(lx - 18, 140, 36, 4, 2).fill({ color: 0xffffff, alpha: 0.04 });
+  }
+
+  // Workstation desks: 2 rows of 2
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 2; col++) {
+      const dx = 580 + col * 120;
+      const dy = 70 + row * 130;
+      drawDesk(g, dx, dy);
+    }
+  }
+
+  // Standing desk at end
+  const sdx = 790, sdy = 100;
+  drawShadow(g, sdx, sdy, 55, 45, 4, 0.3);
+  g.roundRect(sdx, sdy, 55, 45, 4).fill(P.wood);
+  g.roundRect(sdx, sdy, 55, 45, 4).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(sdx, sdy, 55, 3, 2).fill({ color: 0xffffff, alpha: 0.1 });
+  g.roundRect(sdx + 6, sdy + 6, 43, 26, 2).fill(P.monitor);
+  g.roundRect(sdx + 8, sdy + 8, 39, 22, 1).fill({ color: P.led, alpha: 0.15 }); // code on screen
+  // Code lines on monitor
+  for (let i = 0; i < 4; i++) {
+    const lw = 12 + ((i * 7) % 18);
+    g.rect(sdx + 10, sdy + 11 + i * 5, lw, 2).fill({ color: P.led, alpha: 0.3 });
+  }
+  g.roundRect(sdx + 6, sdy + 34, 43, 7, 2).fill(P.wood);
+
+  // Whiteboard on studio right wall
+  drawShadow(g, 842, 80, 8, 80, 2, 0.15);
+  g.roundRect(842, 80, 8, 80, 2).fill(P.white);
+  g.roundRect(842, 80, 8, 80, 2).stroke({ color: P.wallDark, width: 1.5 });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONFERENCE ROOM
+  // ═══════════════════════════════════════════════════════════════════════════
+  drawShadow(g, 70, 530, 140, 60, 6, 0.3);
+  g.roundRect(70, 530, 140, 60, 6).fill(P.wood);
+  g.roundRect(70, 530, 140, 60, 6).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(70, 530, 140, 3, 3).fill({ color: 0xffffff, alpha: 0.1 });
+  g.roundRect(72, 532, 136, 56, 5).fill({ color: P.woodDark, alpha: 0.2 });
+  g.rect(74, 590, 132, 4).fill({ color: 0x000000, alpha: 0.2 });
+  for (let i = 0; i < 5; i++) {
+    g.ellipse(80 + i * 30, 526, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
+    g.ellipse(80 + i * 30, 600, 8, 3).fill({ color: 0x000000, alpha: 0.1 });
+    g.circle(80 + i * 30, 524, 7).fill(P.wallDark);
+    g.circle(80 + i * 30, 598, 7).fill(P.wallDark);
+  }
+  // Whiteboard
+  drawShadow(g, 46, 480, 8, 60, 2, 0.15);
+  g.roundRect(46, 480, 8, 60, 2).fill(P.white);
+  g.roundRect(46, 480, 8, 60, 2).stroke({ color: P.wallDark, width: 1.5 });
+  // Projector screen area
+  g.roundRect(60, 650, 160, 6, 2).fill({ color: P.white, alpha: 0.3 });
+  g.roundRect(135, 640, 10, 10, 2).fill(P.wallDark); // projector mount
 
   // ═══════════════════════════════════════════════════════════════════════════
   // KITCHEN — espresso bar + fruit water dispensers + bar stools
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Countertop (long L-shape)
-  drawShadow(g, 350, 500, 180, 50, 4, 0.18);
-  g.roundRect(350, 500, 180, 30, 4).fill(0xe8ddd0);
-  g.roundRect(350, 500, 180, 30, 4).stroke({ width: 1, color: P.woodDark });
+  drawShadow(g, 350, 500, 180, 50, 4, 0.3);
+  g.roundRect(350, 500, 180, 30, 4).fill(0xF0E6D6);
+  g.roundRect(350, 500, 180, 30, 4).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(350, 500, 180, 3, 2).fill({ color: 0xffffff, alpha: 0.12 });
   g.roundRect(350, 530, 180, 20, 4).fill(0x555555);
+  g.roundRect(350, 530, 180, 20, 4).stroke({ width: 1, color: 0x444444 });
 
   // Espresso machine (commercial style)
-  drawShadow(g, 360, 480, 50, 40, 6, 0.15);
-  g.roundRect(360, 480, 50, 40, 6).fill(0x444444);
-  g.roundRect(360, 480, 50, 40, 6).stroke({ width: 1, color: 0x333333 });
+  drawShadow(g, 360, 480, 50, 40, 6, 0.25);
+  g.roundRect(360, 480, 50, 40, 6).fill(0x555555);
+  g.roundRect(360, 480, 50, 40, 6).stroke({ width: 1.5, color: 0x333333 });
   g.roundRect(364, 484, 42, 20, 3).fill(0x555555);
   g.roundRect(372, 504, 26, 6, 2).fill(P.wallDark);
   g.rect(400, 500, 3, 16).fill(P.wallDark);
@@ -1306,16 +1638,19 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   // LOUNGE
   // ═══════════════════════════════════════════════════════════════════════════
-  drawShadow(g, 660, 530, 200, 100, 4, 0.18);
+  drawShadow(g, 660, 530, 200, 100, 4, 0.25);
   // L-shaped sofa with cushion depth
   g.roundRect(660, 530, 200, 20, 4).fill(P.cushion);
-  g.roundRect(660, 530, 200, 4, 2).fill({ color: 0xffffff, alpha: 0.05 }); // backrest highlight
+  g.roundRect(660, 530, 200, 20, 4).stroke({ width: 1, color: 0x2D4A35 });
+  g.roundRect(660, 530, 200, 4, 2).fill({ color: 0xffffff, alpha: 0.08 }); // backrest highlight
   g.roundRect(660, 530, 20, 100, 4).fill(P.cushion);
-  g.roundRect(660, 530, 4, 100, 2).fill({ color: 0xffffff, alpha: 0.05 }); // side highlight
+  g.roundRect(660, 530, 20, 100, 4).stroke({ width: 1, color: 0x2D4A35 });
+  g.roundRect(660, 530, 4, 100, 2).fill({ color: 0xffffff, alpha: 0.08 }); // side highlight
   // Coffee table with shadow
-  drawShadow(g, 700, 570, 60, 35, 4, 0.12);
+  drawShadow(g, 700, 570, 60, 35, 4, 0.25);
   g.roundRect(700, 570, 60, 35, 4).fill(P.wood);
-  g.roundRect(700, 570, 60, 3, 2).fill({ color: 0xffffff, alpha: 0.06 }); // table highlight
+  g.roundRect(700, 570, 60, 35, 4).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(700, 570, 60, 3, 2).fill({ color: 0xffffff, alpha: 0.1 }); // table highlight
   drawPlant(g, 840, 510);
   // Magazines with subtle shadows
   g.roundRect(710, 576, 15, 10, 1).fill(0xFCA5A5);
@@ -1326,16 +1661,17 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   for (let i = 0; i < 2; i++) {
     const sx = 1015 + i * 45;
-    drawShadow(g, sx, 490, 30, 120, 3, 0.2);
+    drawShadow(g, sx, 490, 30, 120, 3, 0.3);
     // 3D side panel (right face of rack)
     g.moveTo(sx + 30, 490).lineTo(sx + 36, 486).lineTo(sx + 36, 606).lineTo(sx + 30, 610).closePath();
-    g.fill({ color: 0x1f2937, alpha: 0.7 });
+    g.fill({ color: 0x1f2937, alpha: 0.8 });
     // Top face
     g.moveTo(sx, 490).lineTo(sx + 6, 486).lineTo(sx + 36, 486).lineTo(sx + 30, 490).closePath();
-    g.fill({ color: 0x4b5563, alpha: 0.5 });
-    g.roundRect(sx, 490, 30, 120, 3).fill(0x374151);
+    g.fill({ color: 0x4b5563, alpha: 0.6 });
+    g.roundRect(sx, 490, 30, 120, 3).fill(0x4B5563);
+    g.roundRect(sx, 490, 30, 120, 3).stroke({ width: 1.5, color: 0x374151 });
     // Rack front highlight
-    g.roundRect(sx, 490, 30, 2, 1).fill({ color: 0xffffff, alpha: 0.05 });
+    g.roundRect(sx, 490, 30, 2, 1).fill({ color: 0xffffff, alpha: 0.08 });
     for (let j = 0; j < 6; j++) {
       // LED glow halos
       g.circle(sx + 8, 500 + j * 18, 4).fill({ color: P.led, alpha: 0.08 });
@@ -1346,58 +1682,91 @@ function drawFurniture() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PHONE BOOTHS + LOBBY
+  // WEB BOOTH + FOCUS BOOTH + LOBBY
   // ═══════════════════════════════════════════════════════════════════════════
-  drawPhoneBooth(g, 55, 65);
+
+  // Web Booth — larger monitor with browser glow
+  drawShadow(g, 52, 58, 50, 30, 3, 0.25);
+  g.roundRect(52, 58, 50, 30, 3).fill(P.wood);
+  g.roundRect(52, 58, 50, 30, 3).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(52, 58, 50, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
+  g.roundRect(58, 62, 38, 20, 2).fill(P.monitor);
+  g.roundRect(60, 64, 34, 16, 1).fill({ color: 0x7B68EE, alpha: 0.12 }); // indigo browser glow
+  // URL bar
+  g.roundRect(62, 66, 30, 3, 1).fill({ color: 0xffffff, alpha: 0.1 });
+  // Web booth chair
+  g.ellipse(77, 104, 14, 6).fill({ color: 0x000000, alpha: 0.15 });
+  g.circle(77, 102, 11).fill(P.wallDark);
+  g.circle(77, 102, 11).stroke({ width: 1, color: 0x444444 });
+  g.circle(77, 100, 9).fill({ color: 0xffffff, alpha: 0.04 });
+  // Globe decoration
+  g.circle(100, 110, 8).stroke({ width: 1.5, color: 0x7B68EE, alpha: 0.3 });
+  g.ellipse(100, 110, 8, 4).stroke({ width: 1, color: 0x7B68EE, alpha: 0.2 });
+  g.rect(100, 102, 0.5, 16).fill({ color: 0x7B68EE, alpha: 0.2 });
+
+  // Focus Booth
   drawPhoneBooth(g, 1075, 65);
-  drawShadow(g, 80, 415, 120, 20, 4, 0.15);
+
+  // Lobby reception desk
+  drawShadow(g, 80, 415, 120, 20, 4, 0.25);
   g.roundRect(80, 415, 120, 20, 4).fill(P.wood);
-  g.roundRect(80, 415, 120, 2, 1).fill({ color: 0xffffff, alpha: 0.06 }); // top edge highlight
+  g.roundRect(80, 415, 120, 20, 4).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(80, 415, 120, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
   g.roundRect(82, 417, 30, 16, 3).fill(P.monitor);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SCATTERED PLANTS
   // ═══════════════════════════════════════════════════════════════════════════
-  drawPlant(g, 246, 365);
-  drawPlant(g, 852, 365);
-  drawPlant(g, 330, 460);
-  drawPlant(g, 895, 460);
-  drawPlant(g, 1160, 280);
-  drawPlant(g, 1300, 220);
+  drawPlant(g, 246, 365);  // left corridor
+  drawPlant(g, 540, 365);  // between library and studio
+  drawPlant(g, 855, 365);  // right corridor
+  drawPlant(g, 330, 460);  // near hallway
+  drawPlant(g, 895, 460);  // near hallway right
+  drawPlant(g, 1150, 280); // right corridor
 
   layers.furniture.addChild(g);
 }
 
 function drawDesk(g, x, y) {
   // Drop shadow
-  drawShadow(g, x, y, 130, 55, 4, 0.15);
-  // Desk surface with subtle bevel
+  drawShadow(g, x, y, 130, 55, 4, 0.3);
+  // Desk surface with bevel and outline
   g.roundRect(x, y, 130, 55, 4).fill(P.wood);
-  g.roundRect(x, y, 130, 3, 2).fill({ color: 0xffffff, alpha: 0.06 }); // top edge highlight
-  g.roundRect(x + 2, y + 2, 126, 51, 3).fill({ color: P.woodDark, alpha: 0.15 });
+  g.roundRect(x, y, 130, 55, 4).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(x, y, 130, 3, 2).fill({ color: 0xffffff, alpha: 0.12 }); // top edge highlight
+  g.roundRect(x + 2, y + 2, 126, 51, 3).fill({ color: P.woodDark, alpha: 0.12 });
   // Monitor with ambient glow
-  g.roundRect(x + 33, y + 3, 64, 39, 4).fill({ color: P.monGlow, alpha: 0.06 }); // glow halo
+  g.roundRect(x + 33, y + 3, 64, 39, 4).fill({ color: P.monGlow, alpha: 0.08 }); // glow halo
   g.roundRect(x + 35, y + 5, 60, 35, 3).fill(P.monitor);
-  g.roundRect(x + 38, y + 8, 54, 26, 2).fill({ color: P.monGlow, alpha: 0.15 });
+  g.roundRect(x + 35, y + 5, 60, 35, 3).stroke({ width: 1, color: 0x333333 });
+  g.roundRect(x + 38, y + 8, 54, 26, 2).fill({ color: P.monGlow, alpha: 0.2 });
   // Screen bezel highlight
-  g.roundRect(x + 35, y + 5, 60, 2, 1).fill({ color: 0xffffff, alpha: 0.08 });
+  g.roundRect(x + 35, y + 5, 60, 2, 1).fill({ color: 0xffffff, alpha: 0.12 });
   // Monitor stand
   g.roundRect(x + 60, y + 40, 10, 8, 1).fill(P.wallDark);
   // Keyboard
   g.roundRect(x + 30, y + 42, 50, 8, 2).fill(0xD1D5DB);
-  g.roundRect(x + 30, y + 42, 50, 2, 1).fill({ color: 0xffffff, alpha: 0.1 }); // key highlight
+  g.roundRect(x + 30, y + 42, 50, 8, 2).stroke({ width: 0.5, color: 0x999999 });
+  g.roundRect(x + 30, y + 42, 50, 2, 1).fill({ color: 0xffffff, alpha: 0.15 }); // key highlight
   // Chair with shadow
-  g.ellipse(x + 65, y + 72, 14, 6).fill({ color: 0x000000, alpha: 0.15 }); // chair shadow
-  g.circle(x + 65, y + 70, 12).fill(P.wallDark);
-  g.circle(x + 65, y + 68, 10).fill({ color: 0xffffff, alpha: 0.03 }); // subtle seat highlight
+  g.ellipse(x + 65, y + 72, 16, 7).fill({ color: 0x000000, alpha: 0.2 }); // chair shadow
+  g.circle(x + 65, y + 70, 13).fill(P.wallDark);
+  g.circle(x + 65, y + 70, 13).stroke({ width: 1, color: 0x444444 });
+  g.circle(x + 65, y + 68, 11).fill({ color: 0xffffff, alpha: 0.04 }); // subtle seat highlight
 }
 
 function drawPhoneBooth(g, x, y) {
-  drawShadow(g, x, y, 45, 25, 3, 0.12);
+  drawShadow(g, x, y, 45, 25, 3, 0.25);
   g.roundRect(x, y, 45, 25, 3).fill(P.wood);
-  g.roundRect(x, y, 45, 2, 1).fill({ color: 0xffffff, alpha: 0.06 });
+  g.roundRect(x, y, 45, 25, 3).stroke({ width: 1.5, color: P.woodDark });
+  g.roundRect(x, y, 45, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
   g.roundRect(x + 10, y + 3, 25, 15, 2).fill(P.monitor);
-  g.roundRect(x + 11, y + 4, 23, 12, 1).fill({ color: P.monGlow, alpha: 0.1 });
+  g.roundRect(x + 10, y + 3, 25, 15, 2).stroke({ width: 1, color: 0x333333 });
+  g.roundRect(x + 11, y + 4, 23, 12, 1).fill({ color: P.monGlow, alpha: 0.15 });
+  // Chair below desk
+  g.ellipse(x + 22, y + 42, 14, 6).fill({ color: 0x000000, alpha: 0.15 });
+  g.circle(x + 22, y + 40, 11).fill(P.wallDark);
+  g.circle(x + 22, y + 40, 11).stroke({ width: 1, color: 0x444444 });
 }
 
 function drawPlant(g, x, y, size = 1, potColor) {
@@ -1695,84 +2064,99 @@ function hexToNum(c) {
   return 0xF59E0B;
 }
 
+// --- Bee Graphics ---
 function createBeeGraphics(bee) {
   const c = new Container();
   const scale = bee.role === 'queen' ? 1.0 : bee.role === 'recruiter' ? 0.85 : 0.65;
   const s = scale;
   const beeColor = hexToNum(bee.color) || 0xF59E0B;
+  const stripeColor = darkenColor(beeColor, 0.3);
+  const outlineColor = darkenColor(beeColor, 0.35);
+  const outlineW = 1.4;
 
-  // Ground shadow (drawn at origin, positioned via y)
+  // Ground shadow
   const shadow = new Graphics();
   shadow.ellipse(0, 0, 18 * s, 5 * s).fill({ color: 0x000000, alpha: 0.12 });
   shadow.y = 36 * s;
   c.addChild(shadow);
   c._shadow = shadow;
 
-  // Legs — two separate Graphics for walking animation
+  // Legs — jointed insect-style, separate Graphics for walk animation
   const legL = new Graphics();
-  legL.moveTo(0, 0).lineTo(-3 * s, 10 * s).lineTo(-5 * s, 18 * s).stroke({ color: 0x78716c, width: 2.5 * s, cap: 'round' });
-  legL.circle(-5 * s, 18 * s, 2.5 * s).fill(0x78716c); // foot
+  legL.moveTo(0, 0).lineTo(-3*s, 7*s).stroke({ color: 0x5C4A32, width: 2*s, cap: 'round' });
+  legL.moveTo(-3*s, 7*s).lineTo(-5*s, 16*s).stroke({ color: 0x5C4A32, width: 1.8*s, cap: 'round' });
+  legL.circle(-5*s, 16*s, 1.8*s).fill(0x5C4A32);
   legL.x = -6 * s;
-  legL.y = 18 * s;
+  legL.y = 16 * s;
   c.addChild(legL);
   c._legL = legL;
 
   const legR = new Graphics();
-  legR.moveTo(0, 0).lineTo(3 * s, 10 * s).lineTo(5 * s, 18 * s).stroke({ color: 0x78716c, width: 2.5 * s, cap: 'round' });
-  legR.circle(5 * s, 18 * s, 2.5 * s).fill(0x78716c); // foot
+  legR.moveTo(0, 0).lineTo(3*s, 7*s).stroke({ color: 0x5C4A32, width: 2*s, cap: 'round' });
+  legR.moveTo(3*s, 7*s).lineTo(5*s, 16*s).stroke({ color: 0x5C4A32, width: 1.8*s, cap: 'round' });
+  legR.circle(5*s, 16*s, 1.8*s).fill(0x5C4A32);
   legR.x = 6 * s;
-  legR.y = 18 * s;
+  legR.y = 16 * s;
   c.addChild(legR);
   c._legR = legR;
 
-  // Wings — iridescent, translucent (folded back when idle, spread when flying)
+  // Wings — translucent with vein details
   const wingL = new Graphics();
-  wingL.ellipse(-8, -6, 20 * s, 13 * s).fill({ color: 0xdbeafe, alpha: 0.4 });
-  wingL.ellipse(-8, -6, 20 * s, 13 * s).stroke({ width: 1, color: 0x93c5fd, alpha: 0.3 });
-  wingL.ellipse(-6, -8, 12 * s, 8 * s).fill({ color: 0xffffff, alpha: 0.15 });
-  wingL.x = -6 * s;
+  wingL.ellipse(-10*s, -4*s, 22*s, 12*s).fill({ color: 0xdbeafe, alpha: 0.35 });
+  wingL.ellipse(-10*s, -4*s, 22*s, 12*s).stroke({ width: 1.2, color: 0x93c5fd, alpha: 0.6 });
+  wingL.moveTo(-2*s, -4*s).lineTo(-20*s, -8*s).stroke({ color: 0x93c5fd, width: 0.8, alpha: 0.25 });
+  wingL.moveTo(-2*s, -2*s).lineTo(-18*s, 2*s).stroke({ color: 0x93c5fd, width: 0.8, alpha: 0.25 });
+  wingL.ellipse(-8*s, -6*s, 10*s, 7*s).fill({ color: 0xffffff, alpha: 0.12 });
+  wingL.x = -4 * s;
   wingL.y = -8 * s;
   c.addChild(wingL);
   c._wingL = wingL;
 
   const wingR = new Graphics();
-  wingR.ellipse(8, -6, 20 * s, 13 * s).fill({ color: 0xdbeafe, alpha: 0.4 });
-  wingR.ellipse(8, -6, 20 * s, 13 * s).stroke({ width: 1, color: 0x93c5fd, alpha: 0.3 });
-  wingR.ellipse(6, -8, 12 * s, 8 * s).fill({ color: 0xffffff, alpha: 0.15 });
-  wingR.x = 6 * s;
+  wingR.ellipse(10*s, -4*s, 22*s, 12*s).fill({ color: 0xdbeafe, alpha: 0.35 });
+  wingR.ellipse(10*s, -4*s, 22*s, 12*s).stroke({ width: 1.2, color: 0x93c5fd, alpha: 0.6 });
+  wingR.moveTo(2*s, -4*s).lineTo(20*s, -8*s).stroke({ color: 0x93c5fd, width: 0.8, alpha: 0.25 });
+  wingR.moveTo(2*s, -2*s).lineTo(18*s, 2*s).stroke({ color: 0x93c5fd, width: 0.8, alpha: 0.25 });
+  wingR.ellipse(8*s, -6*s, 10*s, 7*s).fill({ color: 0xffffff, alpha: 0.12 });
+  wingR.x = 4 * s;
   wingR.y = -8 * s;
   c.addChild(wingR);
   c._wingR = wingR;
 
   // Body container (for walk bounce separate from position)
   const bodyC = new Container();
-
-  // Body
   const body = new Graphics();
 
-  // Plump round body
-  body.ellipse(0, 2 * s, 22 * s, 22 * s).fill(beeColor);
-  // Soft dark stripes
-  for (let i = -1; i <= 1; i++) {
-    body.roundRect(-20 * s, i * 11 * s - 3 * s, 40 * s, 6 * s, 3 * s).fill(0x3f3a33);
-  }
-  // Body sheen
-  body.ellipse(-7 * s, -8 * s, 10 * s, 12 * s).fill({ color: 0xffffff, alpha: 0.12 });
+  // Abdomen — elongated oval (NOT a circle like a berry)
+  body.ellipse(0, 6*s, 16*s, 18*s).fill(beeColor);
+  body.ellipse(0, 6*s, 16*s, 18*s).stroke({ width: outlineW, color: outlineColor });
+  // Curved stripes that follow body contour
+  body.ellipse(0, -2*s, 15*s, 3*s).fill(stripeColor);
+  body.ellipse(0, 7*s, 16*s, 3*s).fill(stripeColor);
+  body.ellipse(0, 16*s, 13*s, 2.5*s).fill(stripeColor);
+  // Body sheen (light reflection)
+  body.ellipse(-5*s, 0, 8*s, 12*s).fill({ color: 0xffffff, alpha: 0.10 });
   // Stinger
-  body.moveTo(0, 22 * s).lineTo(-3 * s, 28 * s).lineTo(3 * s, 28 * s).closePath().fill(0x78716c);
+  body.moveTo(-2*s, 23*s).lineTo(0, 30*s).lineTo(2*s, 23*s).closePath().fill(0x5C4A32);
+  body.moveTo(-2*s, 23*s).lineTo(0, 30*s).lineTo(2*s, 23*s).closePath().stroke({ width: 0.8, color: 0x3A3020 });
 
-  // Big round head
-  body.circle(0, -24 * s, 17 * s).fill(0xfef9c3);
-  body.ellipse(-5 * s, -32 * s, 7 * s, 5 * s).fill({ color: 0xffffff, alpha: 0.2 });
+  // Thorax — small fuzzy segment connecting head to abdomen
+  body.ellipse(0, -10*s, 11*s, 7*s).fill(darkenColor(beeColor, 0.85));
+  body.ellipse(0, -10*s, 11*s, 7*s).stroke({ width: outlineW, color: outlineColor });
+  body.ellipse(0, -10*s, 9*s, 5*s).fill({ color: beeColor, alpha: 0.6 });
 
-  // Antennae
-  body.moveTo(-6 * s, -40 * s).quadraticCurveTo(-15 * s, -54 * s, -10 * s, -56 * s).stroke({ color: 0x78716c, width: 2 });
-  body.moveTo(6 * s, -40 * s).quadraticCurveTo(15 * s, -54 * s, 10 * s, -56 * s).stroke({ color: 0x78716c, width: 2 });
-  // Heart-shaped antenna tips
-  body.circle(-12 * s, -57 * s, 3 * s).fill(beeColor);
-  body.circle(-8 * s, -57 * s, 3 * s).fill(beeColor);
-  body.circle(12 * s, -57 * s, 3 * s).fill(beeColor);
-  body.circle(8 * s, -57 * s, 3 * s).fill(beeColor);
+  // Head — proportional, clearly separated from body
+  body.circle(0, -24*s, 14*s).fill(0xfef9c3);
+  body.circle(0, -24*s, 14*s).stroke({ width: outlineW, color: 0xC8B888 });
+  body.ellipse(-4*s, -30*s, 6*s, 4*s).fill({ color: 0xffffff, alpha: 0.18 });
+
+  // Antennae — curved with round bobble tips
+  body.moveTo(-5*s, -37*s).quadraticCurveTo(-14*s, -50*s, -10*s, -52*s).stroke({ color: 0x5C4A32, width: 1.8 });
+  body.moveTo(5*s, -37*s).quadraticCurveTo(14*s, -50*s, 10*s, -52*s).stroke({ color: 0x5C4A32, width: 1.8 });
+  body.circle(-10*s, -52*s, 3.5*s).fill(beeColor);
+  body.circle(-10*s, -52*s, 3.5*s).stroke({ width: outlineW, color: outlineColor });
+  body.circle(10*s, -52*s, 3.5*s).fill(beeColor);
+  body.circle(10*s, -52*s, 3.5*s).stroke({ width: outlineW, color: outlineColor });
 
   bodyC.addChild(body);
   c.addChild(bodyC);
@@ -1807,11 +2191,9 @@ function createBeeGraphics(bee) {
   // Speech bubble (hidden by default)
   const bubble = new Container();
   bubble.visible = false;
-
   const bubbleBg = new Graphics();
   bubble.addChild(bubbleBg);
   bubble._bg = bubbleBg;
-
   const bubbleText = new Text({
     text: '',
     style: new TextStyle({
@@ -1828,7 +2210,6 @@ function createBeeGraphics(bee) {
   bubble.addChild(bubbleText);
   bubble._text = bubbleText;
   bubble.y = -70 * s;
-
   c.addChild(bubble);
   c._bubble = bubble;
 
@@ -2119,10 +2500,19 @@ function updatePlayerBee() {
   const isMoving = !!(dx || dy);
   if (isMoving) {
     const len = Math.sqrt(dx * dx + dy * dy);
-    playerBee.drawX += (dx / len) * PLAYER_SPEED;
-    playerBee.drawY += (dy / len) * PLAYER_SPEED;
-    playerBee.drawX = clamp(playerBee.drawX, 20, CANVAS_W - 20);
-    playerBee.drawY = clamp(playerBee.drawY, 20, CANVAS_H - 20);
+    const newX = clamp(playerBee.drawX + (dx / len) * PLAYER_SPEED, 20, CANVAS_W - 20);
+    const newY = clamp(playerBee.drawY + (dy / len) * PLAYER_SPEED, 20, CANVAS_H - 20);
+
+    // Collision: only move if destination is walkable, with wall-sliding
+    if (isWalkable(newX, newY)) {
+      playerBee.drawX = newX;
+      playerBee.drawY = newY;
+    } else if (isWalkable(newX, playerBee.drawY)) {
+      playerBee.drawX = newX; // slide along X
+    } else if (isWalkable(playerBee.drawX, newY)) {
+      playerBee.drawY = newY; // slide along Y
+    }
+
     playerBee.gfx.x = playerBee.drawX;
     playerBee.gfx.y = playerBee.drawY;
     playerBee.targetX = playerBee.drawX + dx; // for lean direction
@@ -2131,6 +2521,7 @@ function updatePlayerBee() {
     } else {
       playerBee._facing = dy > 0 ? 'down' : 'up';
     }
+    if (dx !== 0) flipBee(playerBee, dx < 0);
   }
   animateBee(playerBee, isMoving);
   // Update room
@@ -2173,6 +2564,32 @@ function updateAmbientBee(bee) {
 
   // Detect movement and animate
   const moved = Math.abs(bee.drawX - prevX) + Math.abs(bee.drawY - prevY);
+  const moveDx = bee.drawX - prevX;
+  if (Math.abs(moveDx) > 0.1) flipBee(bee, moveDx < 0);
+
+  // When settled, pick an activity based on what's nearby
+  if (moved < 0.15) {
+    bee._settledFrames = (bee._settledFrames || 0) + 1;
+    if (bee._settledFrames > 30) {
+      const nearPt = findNearestInteractionInfo(bee.drawX, bee.drawY, bee.room);
+      const newAct = interactionToActivity(nearPt, bee.room);
+      if (bee.activity !== newAct) {
+        bee.activity = newAct;
+        const expr = activityToExpression(newAct);
+        updateBeeExpression(bee, expr, nearPt?.facing || null);
+        // Face toward the furniture
+        if (nearPt?.facing === 'left') flipBee(bee, true);
+        else if (nearPt?.facing === 'right') flipBee(bee, false);
+      }
+    }
+  } else {
+    bee._settledFrames = 0;
+    if (bee.activity !== 'idle') {
+      bee.activity = 'idle';
+      updateBeeExpression(bee, 'neutral', null);
+    }
+  }
+
   animateBee(bee, moved > 0.2);
 }
 
@@ -2246,6 +2663,10 @@ function syncBees(serverBees) {
       const expr = activityToExpression(bee.activity);
       updateBeeExpression(lb, expr, beeFacing);
 
+      // Flip body to face interaction point direction when stationary
+      if (beeFacing === 'left') flipBee(lb, true);
+      else if (beeFacing === 'right') flipBee(lb, false);
+
       if (bee.message !== lb.lastMessage) {
         lb.lastMessage = bee.message;
         updateSpeechBubble(lb, bee.message);
@@ -2315,7 +2736,7 @@ function moveAmbientBeesForContext(serverBees) {
   // OmniArtist follows creative work
   if (artist) {
     if (queen.activity === 'coding') {
-      moveAmbientTo(artist, 'desk');
+      moveAmbientTo(artist, 'studio');
     } else if (queen.activity === 'presenting') {
       moveAmbientTo(artist, 'meeting-room');
     } else if (queen.activity === 'idle' || queen.activity === 'drinking-coffee') {
@@ -2329,27 +2750,27 @@ function moveAmbientBeesForContext(serverBees) {
       moveAmbientTo(manager, 'meeting-room');
     } else if (queen.activity === 'running-command') {
       moveAmbientTo(manager, 'server-room');
-    } else if (queen.activity === 'reading' || queen.activity === 'searching') {
-      moveAmbientTo(manager, 'desk');
+    } else if (queen.activity === 'reading' || queen.activity === 'browsing') {
+      moveAmbientTo(manager, 'library');
     } else if (queen.activity === 'idle') {
       moveAmbientTo(manager, 'water-cooler');
     }
   }
 
-  // Coder bees — stay at desk when work is happening, wander to kitchen/lounge on idle
+  // Coder bees — go to relevant rooms based on queen activity
   const coderIds = ['coder-1', 'coder-2', 'coder-3'];
   for (const cid of coderIds) {
     const coder = ambientBees[cid];
     if (!coder) continue;
-    if (queen.activity === 'coding' || queen.activity === 'reading' || queen.activity === 'searching') {
-      moveAmbientTo(coder, 'desk');
+    if (queen.activity === 'coding') {
+      moveAmbientTo(coder, 'studio');
+    } else if (queen.activity === 'reading' || queen.activity === 'browsing') {
+      moveAmbientTo(coder, 'library');
     } else if (queen.activity === 'idle' || queen.activity === 'drinking-coffee') {
-      // Each coder wanders to a different idle spot
-      const idleSpots = ['coffee', 'water-cooler', 'desk'];
+      const idleSpots = ['coffee', 'water-cooler', 'studio'];
       moveAmbientTo(coder, idleSpots[coderIds.indexOf(cid)]);
     } else if (queen.activity === 'running-command') {
-      // One coder checks the server room, others stay at desk
-      moveAmbientTo(coder, cid === 'coder-1' ? 'server-room' : 'desk');
+      moveAmbientTo(coder, cid === 'coder-1' ? 'server-room' : 'studio');
     }
   }
 }
@@ -2414,29 +2835,130 @@ function animateBee(bee, isMoving) {
       gfx._shadow.alpha = 0.12 - hopFactor * 0.03;
     }
   } else {
-    // ── Idle ──
-    // Legs at rest
-    if (gfx._legL) {
-      gfx._legL.rotation = 0;
-      gfx._legR.rotation = 0;
-    }
-    // Gentle breathing — subtle Y sway
-    if (gfx._bodyC) {
-      gfx._bodyC.y = Math.sin(frame * 0.03 + (bee.wingPhase || 0)) * 1.2 * s;
-      gfx._bodyC.rotation *= 0.9; // ease back to upright
-    }
-    // Wings rest, very slow idle flutter
-    if (gfx._wingL) {
-      gfx._wingL.rotation = -0.15 + Math.sin(bee.wingPhase) * 0.05;
-      gfx._wingR.rotation = 0.15 - Math.sin(bee.wingPhase) * 0.05;
-      gfx._wingL.alpha = 0.65;
-      gfx._wingR.alpha = 0.65;
-    }
-    // Shadow at rest
+    // ── Stationary — activity-specific poses ──
+    const act = bee.activity || 'idle';
+    const t = frame * 0.03 + (bee.wingPhase || 0);
+
+    // Shadow at rest (shared across all idle poses)
     if (gfx._shadow) {
       gfx._shadow.y = 36 * s;
       gfx._shadow.scale.set(1, 1);
       gfx._shadow.alpha = 0.12;
+    }
+
+    if (act === 'coding' || act === 'reading' || act === 'searching' || act === 'browsing') {
+      // ── Working at desk / browsing ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0.3;
+        gfx._legR.rotation = 0.3;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.rotation = 0.06; // lean forward
+        // Typing twitch — tiny jitter every ~40 frames
+        const twitch = Math.sin(frame * 0.16 + bee.wingPhase) > 0.85 ? 0.5 * s : 0;
+        gfx._bodyC.y = twitch;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.4;
+        gfx._wingR.rotation = 0.4;
+        gfx._wingL.alpha = 0.35;
+        gfx._wingR.alpha = 0.35;
+      }
+
+    } else if (act === 'drinking-coffee') {
+      // ── Drinking (coffee / fruit water) ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0.1;
+        gfx._legR.rotation = -0.1;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.rotation = -0.04; // slight tilt back
+        gfx._bodyC.y = Math.sin(t) * 0.6 * s;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = 0.15;
+        // Sip motion — wing raises periodically
+        const sipCycle = Math.sin(frame * 0.012 + bee.wingPhase);
+        gfx._wingR.rotation = -0.8 + (sipCycle > 0.7 ? (sipCycle - 0.7) * 0.6 : 0);
+        gfx._wingL.alpha = 0.6;
+        gfx._wingR.alpha = 0.6;
+      }
+
+    } else if (act === 'presenting' || act === 'chatting') {
+      // ── Presenting / chatting — animated gesturing ──
+      if (gfx._legL) {
+        gfx._legL.rotation = Math.sin(t * 0.4) * 0.15;
+        gfx._legR.rotation = Math.sin(t * 0.4 + Math.PI) * 0.15;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = Math.sin(t * 0.5) * 1.5 * s;
+        gfx._bodyC.y = Math.sin(t) * 0.8 * s;
+        gfx._bodyC.rotation = Math.sin(t * 0.5) * 0.03;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.2 + Math.sin(t * 0.7) * 0.2;
+        gfx._wingR.rotation = 0.2 - Math.sin(t * 0.7 + 1) * 0.3;
+        gfx._wingL.alpha = 0.6;
+        gfx._wingR.alpha = 0.6;
+      }
+
+    } else if (act === 'running-command') {
+      // ── Server room — hunched, fast tapping ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0.2;
+        gfx._legR.rotation = 0.2;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.rotation = 0.1; // hunched forward
+        // Fast tap every ~20 frames
+        const tap = Math.sin(frame * 0.3 + bee.wingPhase) > 0.8 ? 0.4 * s : 0;
+        gfx._bodyC.y = tap;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.5;
+        gfx._wingR.rotation = 0.5;
+        gfx._wingL.alpha = 0.3;
+        gfx._wingR.alpha = 0.3;
+      }
+
+    } else if (act === 'thinking') {
+      // ── Thinking — wing to chin, slow sway ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0;
+        gfx._legR.rotation = 0;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.y = Math.sin(t * 0.7) * 0.8 * s;
+        gfx._bodyC.rotation = Math.sin(t * 0.4) * 0.02;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.15 + Math.sin(bee.wingPhase) * 0.04;
+        gfx._wingR.rotation = -0.6; // raised to chin
+        gfx._wingL.alpha = 0.6;
+        gfx._wingR.alpha = 0.6;
+      }
+
+    } else {
+      // ── Default idle ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0;
+        gfx._legR.rotation = 0;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.y = Math.sin(t) * 1.2 * s;
+        gfx._bodyC.rotation *= 0.9;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.15 + Math.sin(bee.wingPhase) * 0.05;
+        gfx._wingR.rotation = 0.15 - Math.sin(bee.wingPhase) * 0.05;
+        gfx._wingL.alpha = 0.65;
+        gfx._wingR.alpha = 0.65;
+      }
     }
   }
 }
@@ -2469,6 +2991,8 @@ function updateAllBees() {
 
     // Detect movement
     const moved = Math.abs(bee.drawX - prevX) + Math.abs(bee.drawY - prevY);
+    const moveDx = bee.drawX - prevX;
+    if (Math.abs(moveDx) > 0.15) flipBee(bee, moveDx < 0);
     animateBee(bee, moved > 0.3);
   }
 
@@ -2518,10 +3042,11 @@ function initVisualEffects() {
     });
   }
 
-  // Monitor glow — subtle blue light behind desk monitors
+  // Monitor glow — subtle warm light behind studio workstation monitors
   const deskMonitors = [
-    { x: 360, y: 95 }, { x: 530, y: 95 }, { x: 700, y: 95 },
-    { x: 360, y: 225 }, { x: 530, y: 225 }, { x: 700, y: 225 },
+    { x: 645, y: 95 }, { x: 765, y: 95 },     // studio row 0
+    { x: 645, y: 225 }, { x: 765, y: 225 },   // studio row 1
+    { x: 345, y: 225 }, { x: 345, y: 325 },   // library reading desks
   ];
   for (const m of deskMonitors) {
     const glow = new Graphics();
@@ -2537,6 +3062,14 @@ function initVisualEffects() {
     glow.roundRect(room.x, room.y, room.w, room.h, 6).fill({ color: 0xFFFBEB, alpha: 0 });
     layers.effects.addChild(glow);
     roomGlows[room.id] = { gfx: glow, targetAlpha: 0, currentAlpha: 0 };
+  }
+
+  // Active monitor screen overlays — drawn over furniture when bee sits at desk
+  monitorScreenOverlays = [];
+  for (const dm of DESK_MONITORS) {
+    const g = new Graphics();
+    layers.effects.addChild(g);
+    monitorScreenOverlays.push({ gfx: g, ...dm, active: false });
   }
 }
 
@@ -2584,10 +3117,9 @@ function updateVisualEffects() {
     }
   }
 
-  // Monitor glow pulse
+  // Monitor glow pulse — active when studio or library is in use
   for (const m of monitorGlows) {
-    const room = ROOMS.find(r => r.id === 'desk');
-    m.active = room && activeRooms.has('desk');
+    m.active = activeRooms.has('studio') || activeRooms.has('library');
     m.gfx.alpha = m.active ? 0.6 + Math.sin(frame * 0.03) * 0.2 : 0.2;
   }
 
@@ -2598,6 +3130,64 @@ function updateVisualEffects() {
     rg.targetAlpha = activeRooms.has(room.id) ? 0.06 : 0;
     rg.currentAlpha += (rg.targetAlpha - rg.currentAlpha) * 0.05;
     rg.gfx.alpha = rg.currentAlpha;
+  }
+
+  // Active monitor screens — show scrolling code when bee is at desk
+  const allBeesForMonitor = [
+    ...(playerBee ? [playerBee] : []),
+    ...Object.values(localBees),
+    ...Object.values(ambientBees),
+  ];
+  for (const mo of monitorScreenOverlays) {
+    let occupied = false;
+    for (const bee of allBeesForMonitor) {
+      if (!bee.gfx) continue;
+      const d = Math.hypot(bee.drawX - mo.chairX, bee.drawY - mo.chairY);
+      const act = bee.activity;
+      if (d < 35 && (act === 'coding' || act === 'reading' || act === 'searching' || act === 'browsing')) {
+        occupied = true;
+        break;
+      }
+    }
+    if (occupied) {
+      drawActiveMonitor(mo.gfx, mo.mx, mo.my, mo.mw, mo.mh);
+    } else if (mo.active) {
+      mo.gfx.clear();
+    }
+    mo.active = occupied;
+  }
+}
+
+/** Draw scrolling code lines on an active monitor screen */
+function drawActiveMonitor(g, mx, my, mw, mh) {
+  g.clear();
+  // Screen glow halo
+  g.roundRect(mx - 3, my - 3, mw + 6, mh + 6, 4)
+    .fill({ color: 0x5B9BD5, alpha: 0.10 });
+  // Bright screen base
+  g.roundRect(mx, my, mw, mh, 2)
+    .fill({ color: 0x1a2030, alpha: 0.85 });
+  // Scrolling code lines
+  const colors = [0x4ade80, 0x60a5fa, 0xfbbf24, 0xc084fc, 0xf87171, 0x38bdf8, 0xa3e635];
+  const lineH = 3.5;
+  const scrollY = (frame * 0.4) % lineH;
+  const numLines = Math.floor(mh / lineH) + 1;
+  for (let i = 0; i < numLines; i++) {
+    const ly = my + 2 + i * lineH - scrollY;
+    if (ly < my || ly > my + mh - 2) continue;
+    const indent = (i % 3) * 3;
+    const lw = 5 + ((i * 7 + (frame >> 3)) % Math.max(1, mw - 10));
+    g.rect(mx + 2 + indent, ly, Math.min(lw, mw - 4 - indent), 1.5)
+      .fill({ color: colors[i % colors.length], alpha: 0.55 });
+  }
+  // Cursor blink
+  if (Math.sin(frame * 0.1) > 0) {
+    const cLine = ((frame >> 5) % Math.max(1, numLines - 1));
+    const cy = my + 2 + cLine * lineH - scrollY;
+    if (cy >= my && cy <= my + mh - 3) {
+      g.rect(mx + 2 + (cLine % 3) * 3 + 8, cy, 1, 3)
+        .fill({ color: 0xffffff, alpha: 0.8 });
+    }
   }
 }
 
@@ -2676,17 +3266,63 @@ function updateDoors() {
 
 // --- Camera ---
 function updateCamera() {
+  // --- Camera follow: lock target to followed bee ---
+  if (cameraFollow && cameraFollow.gfx) {
+    cameraTarget.x = CANVAS_W / 2 - cameraFollow.drawX * cameraTarget.zoom;
+    cameraTarget.y = CANVAS_H / 2 - cameraFollow.drawY * cameraTarget.zoom;
+  }
+
+  // --- Edge-of-screen panning (LoL style) ---
+  if (!cameraFollow && mouseInCanvas && !isPanning && viewMode === 'single') {
+    const rect = app.canvas.getBoundingClientRect();
+    const vw = rect.width, vh = rect.height;
+    let epx = 0, epy = 0;
+    if (mouseViewX < EDGE_PAN_ZONE) epx = EDGE_PAN_SPEED * (1 - mouseViewX / EDGE_PAN_ZONE);
+    else if (mouseViewX > vw - EDGE_PAN_ZONE) epx = -EDGE_PAN_SPEED * (1 - (vw - mouseViewX) / EDGE_PAN_ZONE);
+    if (mouseViewY < EDGE_PAN_ZONE) epy = EDGE_PAN_SPEED * (1 - mouseViewY / EDGE_PAN_ZONE);
+    else if (mouseViewY > vh - EDGE_PAN_ZONE) epy = -EDGE_PAN_SPEED * (1 - (vh - mouseViewY) / EDGE_PAN_ZONE);
+    if (epx || epy) {
+      cameraTarget.x += epx;
+      cameraTarget.y += epy;
+    }
+  }
+
   camera.zoom += (cameraTarget.zoom - camera.zoom) * CAM_LERP;
   camera.x += (cameraTarget.x - camera.x) * CAM_LERP;
   camera.y += (cameraTarget.y - camera.y) * CAM_LERP;
   // Snap zoom to 1 when very close, but only snap position if target is also origin
   if (Math.abs(camera.zoom - 1) < 0.005) camera.zoom = 1;
-  if (Math.abs(cameraTarget.x) < 0.5 && Math.abs(camera.x) < 0.5) camera.x = 0;
-  if (Math.abs(cameraTarget.y) < 0.5 && Math.abs(camera.y) < 0.5) camera.y = 0;
+  if (!cameraFollow) {
+    if (Math.abs(cameraTarget.x) < 0.5 && Math.abs(camera.x) < 0.5) camera.x = 0;
+    if (Math.abs(cameraTarget.y) < 0.5 && Math.abs(camera.y) < 0.5) camera.y = 0;
+  }
   layers.camera.scale.set(camera.zoom);
   layers.camera.position.set(camera.x, camera.y);
+
+  // --- Follow indicator ring ---
+  if (followIndicator) {
+    if (cameraFollow && cameraFollow.gfx) {
+      followIndicator.visible = true;
+      followIndicator.clear();
+      const r = 28 + Math.sin(frame * 0.08) * 4;
+      followIndicator.circle(cameraFollow.drawX, cameraFollow.drawY, r)
+        .stroke({ color: P.honey, width: 2, alpha: 0.4 + Math.sin(frame * 0.08) * 0.15 });
+    } else {
+      followIndicator.visible = false;
+    }
+  }
+
   if (!isPanning) {
-    app.canvas.style.cursor = 'grab';
+    // Change cursor based on edge pan zone
+    if (mouseInCanvas && !cameraFollow) {
+      const rect = app.canvas.getBoundingClientRect();
+      const vw = rect.width, vh = rect.height;
+      const nearEdge = mouseViewX < EDGE_PAN_ZONE || mouseViewX > vw - EDGE_PAN_ZONE ||
+                       mouseViewY < EDGE_PAN_ZONE || mouseViewY > vh - EDGE_PAN_ZONE;
+      app.canvas.style.cursor = nearEdge ? 'crosshair' : 'grab';
+    } else {
+      app.canvas.style.cursor = 'grab';
+    }
   }
 }
 
@@ -3354,9 +3990,9 @@ function handleResponse(payload) {
     updateSpeechBubble(localBees['queen'], payload.content);
   }
 
-  // Force re-render on next state (the state broadcast will follow shortly)
+  // Invalidate terminal fingerprint so the next state broadcast re-checks entries.
+  // Only reset the key (not the count) — resetting count causes a full DOM clear+rebuild.
   lastTerminalKey = '';
-  lastTerminalCount = 0;
 }
 
 // --- WoW Chat Window ---
@@ -3407,6 +4043,21 @@ function initTerminalWindow() {
       if (e.key === 'Enter' && input.value.trim()) {
         const text = input.value.trim();
         input.value = '';
+
+        // Optimistic local render — show message immediately before server roundtrip
+        const terminal = document.getElementById('terminal-output');
+        if (terminal) {
+          const entry = createTerminalEntry({
+            event: 'UserPromptSubmit',
+            content: text,
+            timestamp: new Date().toISOString(),
+            project: projectFilter || undefined,
+            role: 'user',
+          });
+          terminal.appendChild(entry);
+          terminal.scrollTop = terminal.scrollHeight;
+        }
+
         // Send via WebSocket
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
