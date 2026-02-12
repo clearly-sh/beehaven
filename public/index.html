@@ -106,20 +106,12 @@
   </main>
 
   <div id="terminal-window" class="term-window">
-    <div class="term-window-titlebar">
-      <div class="term-window-controls">
-        <button class="term-window-btn term-window-close" title="Close">&times;</button>
-        <button class="term-window-btn term-window-minimize" title="Minimize">&#x2013;</button>
-        <button class="term-window-btn term-window-maximize" title="Maximize">&#x25A1;</button>
-      </div>
-      <span class="term-window-title">BeeHaven Terminal</span>
-      <div class="term-window-drag-spacer"></div>
-    </div>
     <div class="term-window-tabs">
-      <button class="term-window-tab active" data-tab="terminal">Terminal</button>
+      <button class="term-window-tab active" data-tab="terminal">Chat</button>
       <button class="term-window-tab" data-tab="activity">Activity</button>
       <div class="term-tab-divider"></div>
       <div id="project-tabs" class="project-tabs"></div>
+      <button id="btn-term-position" class="term-position-btn" title="Reposition">&#x2725;</button>
     </div>
     <div class="term-window-body">
       <div id="terminal-panel" class="term-window-panel active">
@@ -129,14 +121,9 @@
         <div id="event-log"></div>
       </div>
     </div>
-    <div class="term-resize term-resize-n"></div>
-    <div class="term-resize term-resize-s"></div>
-    <div class="term-resize term-resize-e"></div>
-    <div class="term-resize term-resize-w"></div>
-    <div class="term-resize term-resize-ne"></div>
-    <div class="term-resize term-resize-nw"></div>
-    <div class="term-resize term-resize-se"></div>
-    <div class="term-resize term-resize-sw"></div>
+    <div class="term-input-bar">
+      <input type="text" id="terminal-input" class="term-input" placeholder="Send to Claude..." autocomplete="off" spellcheck="false">
+    </div>
   </div>
 
   <div id="speech-bar" class="speech-bar hidden">

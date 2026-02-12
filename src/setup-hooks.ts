@@ -1,97 +1,141 @@
 // ============================================================================
 // BeeHaven Office - Hook Configuration Setup
-// Writes the Claude Code hooks config to .claude/settings.local.json
-// in the user's current working directory.
+// Writes Claude Code hooks to GLOBAL ~/.claude/settings.json so events are
+// captured from ALL projects, enabling multi-project office views.
 // ============================================================================
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { homedir } from 'os';
 
-export function setupHooks() {
-  // Resolve hook script path relative to this package (not CWD)
+const HOOK_EVENTS = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'Stop',
+  'SessionEnd',
+  'SubagentStart',
+  'SubagentStop',
+  'Notification',
+];
+
+function getHookScript(): string {
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const hookScript = join(packageRoot, 'hooks', 'event-logger.sh');
+  return join(packageRoot, 'hooks', 'event-logger.sh');
+}
 
-  // Write settings to the user's project (CWD), not the package
-  const projectDir = process.cwd();
-  const settingsDir = resolve(projectDir, '.claude');
-  const settingsPath = resolve(settingsDir, 'settings.local.json');
+function getGlobalSettingsPath(): string {
+  return join(homedir(), '.claude', 'settings.json');
+}
 
-  console.log('');
-  console.log('  \uD83D\uDC1D BeeHaven Office - Hook Setup');
-  console.log('  \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501');
-  console.log('');
+/** Check if BeeHaven hooks are already configured in global settings */
+export function hooksConfigured(): boolean {
+  const globalPath = getGlobalSettingsPath();
+  const hookScript = getHookScript();
+  if (!existsSync(globalPath)) return false;
+  try {
+    const settings = JSON.parse(readFileSync(globalPath, 'utf8'));
+    const hooks = settings.hooks;
+    if (!hooks) return false;
+    // Check that at least the key events have our hook
+    for (const event of ['PreToolUse', 'Stop', 'UserPromptSubmit']) {
+      const entries = hooks[event];
+      if (!Array.isArray(entries)) return false;
+      const hasBeeHaven = entries.some((entry: any) =>
+        entry?.hooks?.some((h: any) => h.command === hookScript)
+      );
+      if (!hasBeeHaven) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Install BeeHaven hooks into global ~/.claude/settings.json */
+export function setupHooks(opts: { quiet?: boolean } = {}) {
+  const hookScript = getHookScript();
+  const globalDir = join(homedir(), '.claude');
+  const globalPath = getGlobalSettingsPath();
+
+  if (!opts.quiet) {
+    console.log('');
+    console.log('  \uD83D\uDC1D BeeHaven Office - Hook Setup');
+    console.log('  \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501');
+    console.log('');
+  }
 
   // Verify hook script exists
   if (!existsSync(hookScript)) {
     console.error(`  Error: Hook script not found at ${hookScript}`);
-    console.error('  This may indicate a broken installation.');
-    process.exit(1);
+    if (!opts.quiet) process.exit(1);
+    return;
   }
 
-  // Ensure .claude directory exists
-  if (!existsSync(settingsDir)) {
-    mkdirSync(settingsDir, { recursive: true });
+  // Ensure ~/.claude directory exists
+  if (!existsSync(globalDir)) {
+    mkdirSync(globalDir, { recursive: true });
   }
 
-  // Read existing settings
+  // Read existing global settings (preserve permissions, etc.)
   let settings: Record<string, unknown> = {};
-  if (existsSync(settingsPath)) {
+  if (existsSync(globalPath)) {
     try {
-      settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-      console.log('  Found existing settings.local.json');
-    } catch {
-      console.log('  Creating new settings.local.json');
+      settings = JSON.parse(readFileSync(globalPath, 'utf8'));
+    } catch { /* start fresh */ }
+  }
+
+  // Define hook entry
+  const hookEntry = {
+    hooks: [{ type: 'command', command: hookScript, timeout: 5 }],
+  };
+
+  // Merge hooks — preserve any existing non-BeeHaven hooks per event
+  const existingHooks = (settings.hooks || {}) as Record<string, unknown[]>;
+  const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
+
+  for (const event of HOOK_EVENTS) {
+    const existing = mergedHooks[event] as unknown[] | undefined;
+    if (existing && Array.isArray(existing)) {
+      // Remove any previous BeeHaven hooks (matching our script path), keep others
+      const filtered = existing.filter((entry: any) => {
+        const hooks = entry?.hooks || [];
+        return !hooks.some((h: any) => h.command === hookScript);
+      });
+      filtered.push(hookEntry);
+      mergedHooks[event] = filtered;
+    } else {
+      mergedHooks[event] = [hookEntry];
     }
   }
 
-  // Define hook for all relevant events
-  const hookDef = [
-    {
-      hooks: [
-        {
-          type: 'command',
-          command: hookScript,
-          timeout: 5,
-        },
-      ],
-    },
-  ];
+  settings.hooks = mergedHooks;
+  writeFileSync(globalPath, JSON.stringify(settings, null, 2));
 
-  // Events to watch
-  const events = [
-    'SessionStart',
-    'UserPromptSubmit',
-    'PreToolUse',
-    'PostToolUse',
-    'PostToolUseFailure',
-    'Stop',
-    'SessionEnd',
-    'SubagentStart',
-    'SubagentStop',
-    'Notification',
-  ];
-
-  // Build hooks config
-  const hooks: Record<string, typeof hookDef> = {};
-  for (const event of events) {
-    hooks[event] = hookDef;
+  if (!opts.quiet) {
+    console.log(`  Scope: GLOBAL (all projects)`);
+    console.log(`  Hook script: ${hookScript}`);
+    console.log(`  Settings file: ${globalPath}`);
+    console.log(`  Events configured: ${HOOK_EVENTS.length}`);
+    console.log('');
+    console.log('  Hooks configured globally! All Claude Code sessions will');
+    console.log('  emit events to BeeHaven, enabling multi-project views.');
+    console.log('');
+    console.log('  Restart any running Claude Code sessions for hooks to take effect.');
+    console.log('');
+  } else {
+    console.log(`  [hooks] Installed global hooks → ~/.claude/settings.json (${HOOK_EVENTS.length} events)`);
   }
+}
 
-  settings.hooks = hooks;
-
-  // Write settings
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-
-  console.log(`  Project: ${projectDir}`);
-  console.log(`  Hook script: ${hookScript}`);
-  console.log(`  Settings file: ${settingsPath}`);
-  console.log(`  Events configured: ${events.length}`);
-  console.log('');
-  console.log('  Hooks configured! Claude Code will now emit events to BeeHaven.');
-  console.log('  Restart Claude Code for hooks to take effect.');
-  console.log('');
+/** Auto-setup: install hooks if not already present. Called on app startup. */
+export function ensureHooks() {
+  if (hooksConfigured()) return;
+  console.log('  [hooks] Global hooks not found — installing automatically...');
+  setupHooks({ quiet: true });
 }
 
 // Allow running directly: tsx src/setup-hooks.ts

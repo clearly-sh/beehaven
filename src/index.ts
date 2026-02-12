@@ -8,8 +8,9 @@ import { Office } from './office.js';
 import { Server } from './server.js';
 import { Voice } from './voice.js';
 import { Relay } from './relay.js';
+import { ensureHooks } from './setup-hooks.js';
 
-import { readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import type { OnboardingConfig, ShopPersistData } from './types.js';
@@ -34,29 +35,118 @@ function saveShopToConfig(shop: ShopPersistData): void {
   saveOnboardingConfig({ shop });
 }
 
-// Track transcript reading position so we only send new text
-let lastTranscriptSize = 0;
-let lastTranscriptPath = '';
+// Per-session transcript tracking — maps transcript path → { byte offset, project }
+const transcriptTrackers = new Map<string, { size: number; project?: string }>();
 
-async function flushNewTranscriptText(transcriptPath: string, server: Server, voice: Voice, office: Office) {
+// Event deduplication — when global + project-local hooks both fire, skip duplicates.
+// Key: session_id:hook_event:tool_use_id|timestamp — ring buffer of recent keys.
+const recentEventKeys = new Set<string>();
+const DEDUP_MAX = 200;
+function isDuplicate(event: { session_id: string; hook_event_name: string; tool_use_id?: string; timestamp: string }): boolean {
+  const key = `${event.session_id}:${event.hook_event_name}:${event.tool_use_id || ''}:${event.timestamp}`;
+  if (recentEventKeys.has(key)) return true;
+  recentEventKeys.add(key);
+  if (recentEventKeys.size > DEDUP_MAX) {
+    // Delete oldest entries (Set iterates in insertion order)
+    const it = recentEventKeys.values();
+    for (let i = 0; i < 50; i++) it.next();
+    // Rebuild with recent entries only
+    const keep = Array.from(recentEventKeys).slice(-DEDUP_MAX + 50);
+    recentEventKeys.clear();
+    for (const k of keep) recentEventKeys.add(k);
+  }
+  return false;
+}
+
+/**
+ * Scan ~/.claude/projects/ for recently modified transcript JSONL files.
+ * This discovers sessions that may not have hooks configured, ensuring
+ * ALL active sessions show text in the terminal.
+ */
+const TRANSCRIPT_SCAN_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+function scanActiveTranscripts(server: Server, voice: Voice, office: Office) {
+  const claudeProjects = join(homedir(), '.claude', 'projects');
+  if (!existsSync(claudeProjects)) return;
+
+  const now = Date.now();
   try {
-    if (transcriptPath !== lastTranscriptPath) {
-      lastTranscriptPath = transcriptPath;
-      try {
-        lastTranscriptSize = statSync(transcriptPath).size;
-      } catch { lastTranscriptSize = 0; }
-      console.log(`[transcript] Initialized at offset ${lastTranscriptSize}`);
-      return;
+    const dirs = readdirSync(claudeProjects, { withFileTypes: true });
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue;
+      // Extract project name from encoded dir (e.g., -Users-gemini-projects-clearly → clearly)
+      const segments = d.name.split('-').filter(Boolean);
+      const project = segments[segments.length - 1];
+      if (!project) continue;
+
+      const dirPath = join(claudeProjects, d.name);
+      let files: string[];
+      try { files = readdirSync(dirPath); } catch { continue; }
+
+      for (const f of files) {
+        if (!f.endsWith('.jsonl')) continue;
+        // Skip subagent transcripts (agent-*.jsonl)
+        if (f.startsWith('agent-')) continue;
+
+        const filePath = join(dirPath, f);
+        try {
+          const stat = statSync(filePath);
+          // Only track recently modified files (active sessions)
+          if (now - stat.mtimeMs > TRANSCRIPT_SCAN_MAX_AGE_MS) continue;
+
+          // If not already tracked, register and flush recent content
+          if (!transcriptTrackers.has(filePath)) {
+            // Look back up to 100KB to find recent assistant responses
+            const LOOKBACK = 100 * 1024;
+            const initOffset = Math.max(0, stat.size - LOOKBACK);
+            transcriptTrackers.set(filePath, { size: initOffset, project });
+            // Register as an active session
+            const sessionId = f.replace('.jsonl', '');
+            office.registerSession(sessionId, project);
+            console.log(`[scan] Discovered active session: ${project} (${f}) — reading last ${stat.size - initOffset} bytes`);
+            // Immediately flush the lookback content
+            flushNewTranscriptText(filePath, project, server, voice, office);
+          } else {
+            // Already tracked — flush any new content
+            flushNewTranscriptText(filePath, project, server, voice, office);
+          }
+        } catch { continue; }
+      }
+    }
+  } catch { /* dir may not exist */ }
+}
+
+async function flushNewTranscriptText(
+  transcriptPath: string,
+  sessionProject: string | undefined,
+  server: Server,
+  voice: Voice,
+  office: Office,
+) {
+  try {
+    let tracker = transcriptTrackers.get(transcriptPath);
+    if (!tracker) {
+      // First time seeing this transcript — look back to capture recent content
+      const LOOKBACK = 100 * 1024;
+      let fileSize = 0;
+      try { fileSize = statSync(transcriptPath).size; } catch { /* file may not exist yet */ }
+      const initOffset = Math.max(0, fileSize - LOOKBACK);
+      tracker = { size: initOffset, project: sessionProject };
+      transcriptTrackers.set(transcriptPath, tracker);
+      console.log(`[transcript] Initialized ${transcriptPath} at offset ${initOffset} (${fileSize - initOffset} bytes lookback)`);
+      // Fall through to read the lookback content
     }
 
-    const stat = statSync(transcriptPath);
-    if (stat.size <= lastTranscriptSize) return;
+    // Update project if we have a newer mapping
+    if (sessionProject) tracker.project = sessionProject;
 
-    console.log(`[transcript] Reading ${stat.size - lastTranscriptSize} new bytes`);
+    const stat = statSync(transcriptPath);
+    if (stat.size <= tracker.size) return;
+
+    console.log(`[transcript] Reading ${stat.size - tracker.size} new bytes from ${transcriptPath}`);
 
     const buf = readFileSync(transcriptPath);
-    const newContent = buf.slice(lastTranscriptSize).toString('utf8');
-    lastTranscriptSize = stat.size;
+    const newContent = buf.slice(tracker.size).toString('utf8');
+    tracker.size = stat.size;
 
     const newLines = newContent.trim().split('\n');
     for (const line of newLines) {
@@ -76,12 +166,11 @@ async function flushNewTranscriptText(transcriptPath: string, server: Server, vo
             if (text.length > 0) {
               const displayText = text.length > 5000 ? text.slice(0, 5000) + '\n...' : text;
               console.log(`[transcript] Text (${text.length} chars): ${text.slice(0, 80)}...`);
-              const queenProject = office.getState().bees[0]?.project;
               office.addTerminalEntry({
                 event: 'Stop',
                 content: displayText,
                 timestamp: new Date().toISOString(),
-                project: queenProject,
+                project: tracker.project,
               });
               server.broadcastResponse({ event: 'Stop', content: displayText });
 
@@ -124,6 +213,9 @@ export async function main(opts: StartOptions = {}) {
   console.log('  Visualize Claude Code as a busy bee office');
   console.log('');
 
+  // Auto-install global hooks if not present
+  ensureHooks();
+
   // Initialize components
   const config = loadConfig();
   const watcher = new ClaudeWatcher();
@@ -146,17 +238,57 @@ export async function main(opts: StartOptions = {}) {
 
   // Wire up: events → office state → broadcast + relay
   watcher.on('event', async (event) => {
+    // Deduplicate — global + project-local hooks can both fire for the same event
+    if (isDuplicate(event)) return;
+
     const { speechText } = office.processEvent(event);
 
+    // Resolve project: prefer cwd extraction, fall back to session→project map
+    const cwdProject = event.cwd
+      ? event.cwd.replace(/\/+$/, '').split('/').filter(Boolean).pop() || undefined
+      : undefined;
+    const proj = cwdProject || office.getSessionProject(event.session_id);
+
     if (event.hook_event_name === 'UserPromptSubmit' && event.prompt) {
-      const proj = event.cwd
-        ? event.cwd.replace(/\/+$/, '').split('/').filter(Boolean).pop() || undefined
-        : undefined;
       office.addTerminalEntry({
         event: 'UserPromptSubmit',
         content: event.prompt,
         timestamp: new Date().toISOString(),
         project: proj,
+        role: 'user',
+      });
+    }
+
+    // Add tool use events to terminal log
+    if (event.hook_event_name === 'PreToolUse' && event.tool_name) {
+      let detail = event.tool_name;
+      if (event.tool_input) {
+        if ('file_path' in event.tool_input) {
+          const fp = String(event.tool_input.file_path);
+          detail = `${event.tool_name}: ${fp.split('/').pop()}`;
+        } else if ('command' in event.tool_input) {
+          const cmd = String(event.tool_input.command);
+          detail = `${event.tool_name}: ${cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd}`;
+        } else if ('pattern' in event.tool_input) {
+          detail = `${event.tool_name}: ${event.tool_input.pattern}`;
+        }
+      }
+      office.addTerminalEntry({
+        event: 'PreToolUse',
+        content: detail,
+        timestamp: new Date().toISOString(),
+        project: proj,
+        role: 'tool',
+      });
+    }
+
+    if (event.hook_event_name === 'PostToolUseFailure' && event.tool_name) {
+      office.addTerminalEntry({
+        event: 'PostToolUseFailure',
+        content: `${event.tool_name} failed: ${event.error || 'unknown error'}`,
+        timestamp: new Date().toISOString(),
+        project: proj,
+        role: 'error',
       });
     }
 
@@ -167,13 +299,18 @@ export async function main(opts: StartOptions = {}) {
       server.broadcastResponse({ event: 'UserPromptSubmit', content: event.prompt });
     }
 
-    const transcriptPath = (event as any).transcript_path as string | undefined;
+    const transcriptPath = event.transcript_path;
     if (transcriptPath) {
-      await flushNewTranscriptText(transcriptPath, server, voice, office);
+      await flushNewTranscriptText(transcriptPath, proj, server, voice, office);
     }
 
-    if (event.hook_event_name === 'Stop' && lastTranscriptPath) {
-      setTimeout(() => flushNewTranscriptText(lastTranscriptPath, server, voice, office), 1000);
+    if (event.hook_event_name === 'Stop') {
+      // Flush all known transcripts for this project
+      for (const [path, tracker] of transcriptTrackers) {
+        if (!proj || tracker.project === proj) {
+          setTimeout(() => flushNewTranscriptText(path, proj, server, voice, office), 1000);
+        }
+      }
     }
 
     if (event.hook_event_name === 'SessionStart') {
@@ -193,6 +330,12 @@ export async function main(opts: StartOptions = {}) {
   setInterval(() => {
     server.broadcastState(office.getState());
   }, 500);
+
+  // Scan for active transcripts every 3s — discovers sessions without hooks
+  scanActiveTranscripts(server, voice, office); // initial scan
+  setInterval(() => {
+    scanActiveTranscripts(server, voice, office);
+  }, 3000);
 
   // Auto-save shop state every 60s
   setInterval(() => {

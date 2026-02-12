@@ -13,6 +13,17 @@ const TTS_MAX_CHARS = 4000;   // ElevenLabs limit safety margin
 const TTS_TIMEOUT_MS = 30000; // 30s timeout for TTS API calls
 const STT_TIMEOUT_MS = 15000; // 15s timeout for STT API calls
 
+// Voice tuning for Arabella — fluid, natural conversational delivery
+// Lower stability = more pitch/rhythm variation (expressive)
+// Higher similarityBoost = stays true to Arabella's timbre
+// Style adds expressiveness (v2 models only, increases latency slightly)
+const VOICE_SETTINGS = {
+  stability: 0.30,
+  similarityBoost: 0.78,
+  style: 0.55,
+  useSpeakerBoost: true,
+};
+
 interface VoiceConfig {
   apiKey?: string;
   voiceId?: string;
@@ -30,7 +41,7 @@ export class Voice extends EventEmitter {
   constructor(config: VoiceConfig = {}) {
     super();
     this.voiceId = config.voiceId || 'Z3R5wn05IrDiVCyEkUrK'; // Arabella voice
-    this.modelId = config.modelId || 'eleven_flash_v2_5';
+    this.modelId = config.modelId || 'eleven_v3';
     this.enabled = config.enabled ?? true;
 
     if (!this.enabled) {
@@ -105,10 +116,17 @@ export class Voice extends EventEmitter {
 
   /** Core TTS conversion — call API and collect stream */
   private async ttsConvert(text: string): Promise<Buffer | null> {
+    // Build voice settings — omit style and useSpeakerBoost for v3 models
+    const isV3 = this.modelId.startsWith('eleven_v3');
+    const voiceSettings = isV3
+      ? { stability: 0.0, similarityBoost: VOICE_SETTINGS.similarityBoost }
+      : VOICE_SETTINGS;
+
     const audioStream = await this.client.textToSpeech.convert(this.voiceId, {
       text,
       modelId: this.modelId,
-      outputFormat: 'mp3_44100_64',
+      outputFormat: 'mp3_44100_128',
+      voiceSettings,
     });
 
     // Collect stream into buffer — handle both async iterable and ReadableStream
