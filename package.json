@@ -1,24 +1,52 @@
 {
-  "name": "beehaven-office",
-  "version": "1.0.0",
-  "description": "BeeHaven Office - Animated bee office that visualizes Claude Code activity with ElevenLabs voice",
+  "name": "@clearly/beehaven",
+  "version": "0.1.0",
+  "description": "Visualize Claude Code activity as an animated bee office",
   "type": "module",
   "main": "dist/index.js",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "setup-hooks": "node dist/setup-hooks.js",
-    "setup-relay": "tsx src/setup-relay.ts"
+  "bin": {
+    "beehaven": "dist/cli.js"
   },
+  "files": [
+    "dist/",
+    "public/",
+    "hooks/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli.ts",
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "setup": "node dist/cli.js setup",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "visualization",
+    "developer-tools",
+    "ai",
+    "beehaven"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clearly-sh/beehaven"
+  },
+  "homepage": "https://github.com/clearly-sh/beehaven#readme",
   "dependencies": {
-    "@elevenlabs/elevenlabs-js": "^2.34.0",
     "chokidar": "^4.0.0",
     "express": "^4.21.0",
-    "firebase-admin": "^13.0.0",
     "open": "^10.2.0",
-    "pixi.js": "^8.16.0",
     "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.34.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
