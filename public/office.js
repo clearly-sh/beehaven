@@ -103,6 +103,11 @@ let lastPinchDist = 0;
 const ZOOM_MIN = 0.5, ZOOM_MAX = 3.0;
 const CAM_LERP = 0.15;
 
+// --- Player Bee ---
+let playerBee = null;
+let keysDown = new Set();
+const PLAYER_SPEED = 3.5;
+
 // --- Elevator Constants ---
 const ELEV = {
   shaftX: 920, shaftY: 80, shaftW: 60, shaftH: 580,
@@ -176,12 +181,13 @@ function clientToCanvas(e) {
   const aspect = CANVAS_W / CANVAS_H;
   const containerAspect = rect.width / rect.height;
   let cw, ch, ox, oy;
+  // object-fit: cover — one dimension overflows (clipped)
   if (containerAspect > aspect) {
-    ch = rect.height; cw = ch * aspect;
-    ox = (rect.width - cw) / 2; oy = 0;
-  } else {
     cw = rect.width; ch = cw / aspect;
     ox = 0; oy = (rect.height - ch) / 2;
+  } else {
+    ch = rect.height; cw = ch * aspect;
+    ox = (rect.width - cw) / 2; oy = 0;
   }
   return {
     x: ((e.clientX - rect.left - ox) / cw) * CANVAS_W,
@@ -358,7 +364,6 @@ function loginSuccess() {
   sessionStorage.setItem('beehaven-session', '1');
   const loginScreen = document.getElementById('login-screen');
   const main = document.getElementById('main');
-  const header = document.getElementById('header');
 
   // Animate out login
   loginScreen.classList.add('hidden');
@@ -368,7 +373,6 @@ function loginSuccess() {
     loginScreen.style.display = 'none';
     main.classList.remove('main-hidden');
     main.classList.add('main-visible');
-    if (header) header.style.opacity = '1';
   }, 400);
 }
 
@@ -381,12 +385,8 @@ function initLogin() {
     loginScreen.style.display = 'none';
     document.getElementById('main').classList.remove('main-hidden');
     document.getElementById('main').classList.add('main-visible');
-    document.getElementById('header').style.opacity = '1';
     return;
   }
-
-  // Hide header until logged in
-  document.getElementById('header').style.opacity = '0';
 
   // Determine mode
   const storedHash = localStorage.getItem(PIN_STORAGE_KEY);
@@ -488,6 +488,7 @@ async function init() {
   drawFurniture();
   createElevator();
   initAmbientBees();
+  initPlayerBee();
   initVisualEffects();
   initDoors();
 
@@ -495,6 +496,7 @@ async function init() {
   app.ticker.add(() => {
     frame++;
     updateCamera();
+    updatePlayerBee();
     updateAllBees();
     updateElevator();
     updateVisualEffects();
@@ -590,6 +592,16 @@ async function init() {
       }
     }
   });
+
+  // --- Player WASD / Arrow key handlers ---
+  window.addEventListener('keydown', (e) => {
+    if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+    if (['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      keysDown.add(e.key);
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', (e) => keysDown.delete(e.key));
 
   // Connect WebSocket
   connectWS();
@@ -1848,6 +1860,61 @@ function initAmbientBees() {
   }
 }
 
+function initPlayerBee() {
+  const def = { id: 'player', name: 'You', role: 'worker', color: 0xF59E0B, accessory: null };
+  const room = ROOMS.find(r => r.id === 'lobby');
+  const x = room.x + room.w / 2;
+  const y = room.y + room.h / 2;
+  const gfx = createBeeGraphics({ ...def, role: 'queen' }); // queen scale for visibility
+  gfx.x = x;
+  gfx.y = y;
+  gfx.scale.set(0.85);
+  layers.bees.addChild(gfx);
+  playerBee = {
+    ...def,
+    drawX: x, drawY: y,
+    targetX: x, targetY: y,
+    room: 'lobby',
+    activity: 'idle',
+    gfx,
+    wingPhase: Math.random() * Math.PI * 2,
+    _facing: 'right',
+  };
+}
+
+function updatePlayerBee() {
+  if (!playerBee) return;
+  let dx = 0, dy = 0;
+  if (keysDown.has('w') || keysDown.has('ArrowUp')) dy = -1;
+  if (keysDown.has('s') || keysDown.has('ArrowDown')) dy = 1;
+  if (keysDown.has('a') || keysDown.has('ArrowLeft')) dx = -1;
+  if (keysDown.has('d') || keysDown.has('ArrowRight')) dx = 1;
+  if (dx || dy) {
+    const len = Math.sqrt(dx * dx + dy * dy);
+    playerBee.drawX += (dx / len) * PLAYER_SPEED;
+    playerBee.drawY += (dy / len) * PLAYER_SPEED;
+    playerBee.drawX = clamp(playerBee.drawX, 20, CANVAS_W - 20);
+    playerBee.drawY = clamp(playerBee.drawY, 20, CANVAS_H - 20);
+    playerBee.gfx.x = playerBee.drawX;
+    playerBee.gfx.y = playerBee.drawY;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      playerBee._facing = dx > 0 ? 'right' : 'left';
+    } else {
+      playerBee._facing = dy > 0 ? 'down' : 'up';
+    }
+  }
+  // Wing animation
+  playerBee.wingPhase += 0.2;
+  if (playerBee.gfx._wingL) {
+    playerBee.gfx._wingL.rotation = Math.sin(playerBee.wingPhase) * 0.35;
+    playerBee.gfx._wingR.rotation = -Math.sin(playerBee.wingPhase) * 0.35;
+  }
+  // Idle bob
+  playerBee.gfx.y += Math.sin(frame * 0.05 + playerBee.wingPhase) * 1.5;
+  // Update room
+  playerBee.room = findRoomAtPosition(playerBee.drawX, playerBee.drawY) || playerBee.room;
+}
+
 function updateAmbientBee(bee) {
   // Idle wandering within current room (no pathfinding for intra-room moves)
   bee.idleTimer = (bee.idleTimer || 0) + 1;
@@ -2489,10 +2556,10 @@ function exitBuildingView(selectedProject) {
   buildingTransitionTarget = 0;
   if (selectedProject) {
     projectFilter = selectedProject;
-    const select = document.getElementById('project-filter');
-    if (select) select.value = selectedProject;
-    const deleteBtn = document.getElementById('btn-delete-project');
-    if (deleteBtn) deleteBtn.style.display = '';
+    // Update project tab active states
+    document.querySelectorAll('.project-tab').forEach(t => {
+      t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));
+    });
     lastTerminalKey = '';
     lastEventLogKey = '';
   }
@@ -2561,9 +2628,9 @@ function handleState(state) {
     setConnectionStatus('active', state.currentTool ? `Using ${state.currentTool}` : 'Working...');
   }
 
-  // Update project filter dropdown
+  // Update project tabs
   if (state.projects) {
-    updateProjectDropdown(state.projects);
+    updateProjectTabs(state.projects);
   }
 
   // Sync ALL bees (visibility is toggled inside syncBees based on projectFilter)
@@ -2903,33 +2970,21 @@ function renderTerminalFromState(entries) {
     const rc = roleConfig[role] || roleConfig.tool;
 
     const relTime = relativeTime(entry.timestamp);
+    const content = entry.content || '';
 
-    let content = entry.content || '';
-    if (content.length > 5000) content = content.slice(0, 5000) + '\n...';
-
-    // Count lines for collapsible detection
-    const lineCount = content.split('\n').length;
-    const isLong = lineCount > 5 || content.length > 400;
+    const projectTag = entry.project
+      ? `<span class="term-project-tag">${escapeHtml(shortProjectName(entry.project))}</span>`
+      : '';
 
     el.innerHTML = `
       <div class="term-prompt">
         <span class="term-role-icon">${rc.icon}</span>
         <span class="term-badge ${rc.badge}">${escapeHtml(rc.label)}</span>
+        ${projectTag}
         <span class="term-relative-time">${relTime}</span>
       </div>
-      <div class="term-content${isLong ? ' collapsed' : ''}">${escapeHtml(content)}</div>
-      ${isLong ? '<span class="term-collapse-toggle">Show more</span>' : ''}
+      <div class="term-content">${escapeHtml(content)}</div>
     `;
-
-    // Bind collapse toggle
-    if (isLong) {
-      const toggle = el.querySelector('.term-collapse-toggle');
-      const contentEl = el.querySelector('.term-content');
-      toggle.addEventListener('click', () => {
-        const collapsed = contentEl.classList.toggle('collapsed');
-        toggle.textContent = collapsed ? 'Show more' : 'Show less';
-      });
-    }
 
     terminal.appendChild(el);
   }
@@ -3005,9 +3060,9 @@ function toggleMaximize() {
   } else {
     termPreMaximize = { x: termWindow.x, y: termWindow.y, width: termWindow.width, height: termWindow.height };
     termWindow.x = 0;
-    termWindow.y = 52;
+    termWindow.y = 0;
     termWindow.width = window.innerWidth;
-    termWindow.height = window.innerHeight - 52;
+    termWindow.height = window.innerHeight;
     termWindow.maximized = true;
   }
   applyTermWindowPosition();
@@ -3041,7 +3096,7 @@ function onTermDragResizeMove(e) {
     let ny = e.clientY - termDragOffset.y;
     const snap = 12;
     const maxX = window.innerWidth - win.offsetWidth;
-    const minY = 52;
+    const minY = 0;
     if (nx < snap) nx = 0;
     if (ny < minY + snap) ny = minY;
     if (nx > maxX - snap) nx = Math.max(0, maxX);
@@ -3125,7 +3180,6 @@ function initTerminalWindow() {
   win.querySelector('.term-window-close').addEventListener('click', () => {
     termWindow.visible = false;
     win.classList.add('hidden');
-    document.getElementById('btn-terminal')?.classList.remove('active');
     saveTermWindowState();
   });
   win.querySelector('.term-window-minimize').addEventListener('click', () => {
@@ -3165,7 +3219,7 @@ function initTerminalWindow() {
     const maxX = window.innerWidth - termWindow.width;
     const maxY = window.innerHeight - 36;
     if (termWindow.x > maxX) termWindow.x = Math.max(0, maxX);
-    if (termWindow.y > maxY) termWindow.y = Math.max(52, maxY);
+    if (termWindow.y > maxY) termWindow.y = Math.max(0, maxY);
     applyTermWindowPosition();
   });
 
@@ -3405,19 +3459,6 @@ function bindUI() {
   // Floating terminal window
   initTerminalWindow();
 
-  // Terminal toggle button
-  document.getElementById('btn-terminal').addEventListener('click', () => {
-    const win = document.getElementById('terminal-window');
-    termWindow.visible = !termWindow.visible;
-    win.classList.toggle('hidden', !termWindow.visible);
-    if (termWindow.visible && termWindow.minimized) {
-      termWindow.minimized = false;
-      win.classList.remove('minimized');
-    }
-    document.getElementById('btn-terminal').classList.toggle('active', termWindow.visible);
-    saveTermWindowState();
-  });
-
   // Account popover
   document.getElementById('btn-account').addEventListener('click', toggleAccount);
   document.getElementById('btn-account-close').addEventListener('click', toggleAccount);
@@ -3464,41 +3505,18 @@ function bindUI() {
 
   document.getElementById('btn-mic').addEventListener('click', toggleMic);
 
-  // Project filter
-  const projectSelect = document.getElementById('project-filter');
-  const deleteBtn = document.getElementById('btn-delete-project');
-
-  projectSelect.addEventListener('change', (e) => {
-    projectFilter = e.target.value || null;
-    deleteBtn.style.display = projectFilter ? '' : 'none';
-    lastTerminalKey = '';
-    lastEventLogKey = '';
-
-    // Toggle building view
-    if (!projectFilter && officeState?.projects?.length > 1) {
-      enterBuildingView(officeState.projects);
-    } else {
-      exitBuildingView(null); // just exit building view, keep current filter
-    }
-  });
-
-  deleteBtn.addEventListener('click', () => {
-    if (!projectFilter) return;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'delete-project', project: projectFilter }));
-    }
-    projectFilter = null;
-    projectSelect.value = '';
-    deleteBtn.style.display = 'none';
-    lastTerminalKey = '';
-    lastEventLogKey = '';
-  });
-
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === '`') {
       e.preventDefault();
-      document.getElementById('btn-terminal').click();
+      const win = document.getElementById('terminal-window');
+      termWindow.visible = !termWindow.visible;
+      win.classList.toggle('hidden', !termWindow.visible);
+      if (termWindow.visible && termWindow.minimized) {
+        termWindow.minimized = false;
+        win.classList.remove('minimized');
+      }
+      saveTermWindowState();
     }
     if (e.key === 'Escape' && shopOpen) toggleShop();
   });
@@ -3520,28 +3538,46 @@ function setText(id, value) {
   if (el) el.textContent = String(value ?? 0);
 }
 
-function updateProjectDropdown(projects) {
-  const select = document.getElementById('project-filter');
-  if (!select) return;
+function shortProjectName(fullPath) {
+  return fullPath.split('/').filter(Boolean).pop() || fullPath;
+}
 
-  // Remember current selection
-  const current = select.value;
+function updateProjectTabs(projects) {
+  const container = document.getElementById('project-tabs');
+  if (!container) return;
+  container.innerHTML = '';
 
-  // Rebuild options only if the list changed
-  const existing = Array.from(select.options).slice(1).map(o => o.value);
-  if (existing.length === projects.length && existing.every((v, i) => v === projects[i])) return;
+  // "All" tab
+  const allTab = document.createElement('button');
+  allTab.className = 'project-tab' + (!projectFilter ? ' active' : '');
+  allTab.dataset.project = '';
+  allTab.textContent = 'All';
+  allTab.addEventListener('click', () => { setProjectFilter(null); });
+  container.appendChild(allTab);
 
-  select.innerHTML = '<option value="">All Projects</option>';
   for (const p of projects) {
-    const opt = document.createElement('option');
-    opt.value = p;
-    opt.textContent = p;
-    select.appendChild(opt);
+    const tab = document.createElement('button');
+    tab.className = 'project-tab' + (projectFilter === p ? ' active' : '');
+    tab.dataset.project = p;
+    tab.textContent = shortProjectName(p);
+    tab.title = p;
+    tab.addEventListener('click', () => { setProjectFilter(p); });
+    container.appendChild(tab);
   }
+}
 
-  // Restore selection
-  if (current && projects.includes(current)) {
-    select.value = current;
+function setProjectFilter(project) {
+  projectFilter = project;
+  lastTerminalKey = '';
+  lastEventLogKey = '';
+  // Update tab active states
+  document.querySelectorAll('.project-tab').forEach(t => {
+    t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));
+  });
+  if (!projectFilter && officeState?.projects?.length > 1) {
+    enterBuildingView(officeState.projects);
+  } else {
+    exitBuildingView(null);
   }
 }
 
