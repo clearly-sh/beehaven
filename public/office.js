@@ -93,6 +93,16 @@ let shopOpen = false;
 let accountOpen = false;
 let accountState = { linked: false, profile: null, tier: 'local', connected: false };
 
+// --- Camera (Zoom / Pan) ---
+let camera = { x: 0, y: 0, zoom: 1 };
+let cameraTarget = { x: 0, y: 0, zoom: 1 };
+let isPanning = false;
+let panLast = { x: 0, y: 0 };
+let pointers = new Map();   // pointerId → {x, y} for touch
+let lastPinchDist = 0;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 3.0;
+const CAM_LERP = 0.15;
+
 // --- Elevator Constants ---
 const ELEV = {
   shaftX: 920, shaftY: 80, shaftW: 60, shaftH: 580,
@@ -158,6 +168,26 @@ for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
 // Waypoint lookup by id
 const WP_MAP = {};
 for (const wp of WAYPOINTS) WP_MAP[wp.id] = wp;
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function clientToCanvas(e) {
+  const rect = app.canvas.getBoundingClientRect();
+  const aspect = CANVAS_W / CANVAS_H;
+  const containerAspect = rect.width / rect.height;
+  let cw, ch, ox, oy;
+  if (containerAspect > aspect) {
+    ch = rect.height; cw = ch * aspect;
+    ox = (rect.width - cw) / 2; oy = 0;
+  } else {
+    cw = rect.width; ch = cw / aspect;
+    ox = 0; oy = (rect.height - ch) / 2;
+  }
+  return {
+    x: ((e.clientX - rect.left - ox) / cw) * CANVAS_W,
+    y: ((e.clientY - rect.top - oy) / ch) * CANVAS_H,
+  };
+}
 
 function wpDist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -442,10 +472,12 @@ async function init() {
   layers.buildingOverlay = new Container();
   layers.buildingOverlay.visible = false;
 
-  // Main office container (scaled for building view)
+  // Camera container (zoom/pan) wraps officeRoot
+  layers.camera = new Container();
   layers.officeRoot = new Container();
   layers.officeRoot.addChild(layers.floor, layers.rooms, layers.furniture, layers.bees, layers.ui);
-  app.stage.addChild(layers.officeRoot, layers.buildingOverlay);
+  layers.camera.addChild(layers.officeRoot);
+  app.stage.addChild(layers.camera, layers.buildingOverlay);
 
   // Effects layer (between furniture and bees)
   layers.effects = new Container();
@@ -462,11 +494,85 @@ async function init() {
   // Animation loop
   app.ticker.add(() => {
     frame++;
+    updateCamera();
     updateAllBees();
     updateElevator();
     updateVisualEffects();
     updateDoors();
     updateBuildingTransition();
+  });
+
+  // --- Camera input handlers ---
+  app.canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (viewMode === 'building') return;
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+    const mouse = clientToCanvas(e);
+    const wx = (mouse.x - camera.x) / camera.zoom;
+    const wy = (mouse.y - camera.y) / camera.zoom;
+    cameraTarget.zoom = newZoom;
+    cameraTarget.x = mouse.x - wx * newZoom;
+    cameraTarget.y = mouse.y - wy * newZoom;
+  }, { passive: false });
+
+  app.canvas.addEventListener('pointerdown', (e) => {
+    if (viewMode === 'building') return;
+    pointers.set(e.pointerId, clientToCanvas(e));
+    if (pointers.size === 1 && camera.zoom > 1.01) {
+      isPanning = true;
+      panLast = clientToCanvas(e);
+      app.canvas.setPointerCapture(e.pointerId);
+      app.canvas.style.cursor = 'grabbing';
+    }
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    }
+  });
+
+  app.canvas.addEventListener('pointermove', (e) => {
+    if (viewMode === 'building') return;
+    const pos = clientToCanvas(e);
+    pointers.set(e.pointerId, pos);
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      if (lastPinchDist > 0) {
+        const factor = dist / lastPinchDist;
+        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
+        const wx = (mid.x - camera.x) / camera.zoom;
+        const wy = (mid.y - camera.y) / camera.zoom;
+        cameraTarget.zoom = newZoom;
+        cameraTarget.x = mid.x - wx * newZoom;
+        cameraTarget.y = mid.y - wy * newZoom;
+      }
+      lastPinchDist = dist;
+      isPanning = false;
+      return;
+    }
+    if (isPanning) {
+      cameraTarget.x += pos.x - panLast.x;
+      cameraTarget.y += pos.y - panLast.y;
+      panLast = pos;
+    }
+  });
+
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) lastPinchDist = 0;
+    if (pointers.size === 0) {
+      isPanning = false;
+      app.canvas.style.cursor = camera.zoom > 1.01 ? 'grab' : '';
+    }
+  };
+  window.addEventListener('pointerup', endPointer);
+  window.addEventListener('pointercancel', endPointer);
+
+  app.canvas.addEventListener('dblclick', () => {
+    if (viewMode === 'building') return;
+    cameraTarget = { x: 0, y: 0, zoom: 1 };
   });
 
   // Canvas click for building view
@@ -2220,6 +2326,21 @@ function updateDoors() {
   }
 }
 
+// --- Camera ---
+function updateCamera() {
+  camera.zoom += (cameraTarget.zoom - camera.zoom) * CAM_LERP;
+  camera.x += (cameraTarget.x - camera.x) * CAM_LERP;
+  camera.y += (cameraTarget.y - camera.y) * CAM_LERP;
+  if (Math.abs(camera.zoom - 1) < 0.005 && Math.abs(camera.x) < 0.5 && Math.abs(camera.y) < 0.5) {
+    camera.zoom = 1; camera.x = 0; camera.y = 0;
+  }
+  layers.camera.scale.set(camera.zoom);
+  layers.camera.position.set(camera.x, camera.y);
+  if (!isPanning) {
+    app.canvas.style.cursor = camera.zoom > 1.01 ? 'grab' : '';
+  }
+}
+
 // --- Building View ---
 function updateBuildingTransition() {
   // Smooth lerp toward target
@@ -2360,6 +2481,7 @@ function enterBuildingView(projects) {
   buildingProjects = projects;
   viewMode = 'building';
   buildingTransitionTarget = 1;
+  cameraTarget = { x: 0, y: 0, zoom: 1 };
 }
 
 function exitBuildingView(selectedProject) {
