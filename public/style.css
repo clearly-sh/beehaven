@@ -514,6 +514,71 @@ body {
 }
 .shop-popover-body::-webkit-scrollbar { width: 3px; }
 .shop-popover-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 2px; }
+.shop-popover-body.hidden { display: none; }
+
+/* ---- Shop Tabs ---- */
+.shop-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.shop-tab {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.shop-tab:hover { color: rgba(255, 255, 255, 0.7); background: rgba(255, 255, 255, 0.04); }
+.shop-tab.active {
+  color: var(--text-on-dark);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- Team Roster ---- */
+.shop-team-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  margin-left: 4px;
+}
+.shop-team-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.shop-team-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+.shop-team-card-icon { font-size: 16px; flex-shrink: 0; }
+.shop-team-card-info { flex: 1; min-width: 0; }
+.shop-team-card-name { font-size: 12px; font-weight: 600; color: var(--text-on-dark); }
+.shop-team-card-type { font-size: 10px; color: rgba(255, 255, 255, 0.4); text-transform: capitalize; }
+.shop-team-card-fire {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.shop-team-card-fire:hover { color: #ef4444; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); }
 
 /* ---- Account Popover ---- */
 .account-btn { position: relative; }
@@ -817,6 +882,229 @@ body {
 .shop-card-btn.equip:hover { background: rgba(255, 255, 255, 0.14); }
 .shop-card-btn.equipped { background: var(--accent-honey); color: var(--bg-sidebar); }
 
+/* ---- Team Portrait Dock (Right Edge) ---- */
+.team-dock {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  pointer-events: auto;
+}
+.team-dock:empty { display: none; }
+
+.team-portrait {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(0,0,0,0.25);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+}
+.team-portrait svg {
+  width: 40px;
+  height: 40px;
+  margin-top: 4px; /* shift down slightly so face is centered in circle */
+}
+.team-portrait:hover {
+  border-color: rgba(255,255,255,0.4);
+  transform: scale(1.12);
+  box-shadow: 0 3px 14px rgba(0,0,0,0.45);
+}
+.team-portrait.selected {
+  border-color: var(--accent-honey);
+  box-shadow: 0 0 12px rgba(251,191,36,0.4), 0 2px 10px rgba(0,0,0,0.35);
+}
+
+.team-portrait-status {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(26,23,20,0.9);
+  background: #4ade80;
+  z-index: 2;
+}
+.team-portrait-status.working { background: #3b82f6; box-shadow: 0 0 4px rgba(59,130,246,0.5); }
+.team-portrait-status.thinking { background: #fbbf24; box-shadow: 0 0 4px rgba(251,191,36,0.5); }
+
+/* Expanded customization panel — fixed on body, positioned to left of portrait */
+.team-panel {
+  position: fixed;
+  width: 255px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 14px;
+  z-index: 500;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 0 1px rgba(255,255,255,0.1);
+  animation: teamPanelIn 0.18s ease-out;
+  pointer-events: auto;
+}
+.team-panel::-webkit-scrollbar { width: 3px; }
+.team-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+@keyframes teamPanelIn {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.team-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.team-panel-preview {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.team-panel-preview svg { margin-top: 6px; }
+.team-panel-bee-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-on-dark);
+}
+.team-panel-type {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 1px;
+}
+
+.team-panel-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 10px 0 4px;
+}
+
+.team-panel-name-input {
+  width: 100%;
+  padding: 5px 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  color: var(--text-on-dark);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  box-sizing: border-box;
+}
+.team-panel-name-input:focus {
+  border-color: rgba(255,255,255,0.25);
+}
+
+/* Color swatches */
+.team-panel-colors {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.team-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.team-color-swatch:hover { transform: scale(1.15); }
+.team-color-swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 6px rgba(255,255,255,0.3);
+}
+
+/* Tool chips */
+.team-panel-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.team-tool-chip {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+.team-tool-chip:hover {
+  color: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.08);
+}
+.team-tool-chip.active {
+  color: var(--accent-honey);
+  background: rgba(212,165,69,0.12);
+  border-color: rgba(212,165,69,0.3);
+}
+
+/* Panel action buttons */
+.team-panel-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+.team-panel-save {
+  flex: 1;
+  padding: 6px 0;
+  background: var(--accent-brass);
+  color: var(--bg-sidebar);
+  border: none;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.team-panel-save:hover { opacity: 0.85; }
+.team-panel-fire {
+  padding: 6px 12px;
+  background: rgba(239,68,68,0.1);
+  color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.team-panel-fire:hover {
+  color: #ef4444;
+  background: rgba(239,68,68,0.2);
+  border-color: rgba(239,68,68,0.4);
+}
+
 /* Honey earned floating animation */
 .honey-float {
   position: fixed;
@@ -852,6 +1140,7 @@ body {
   }
 
   .shop-popover { width: 300px; }
+  .team-dock { display: none; }
 
   .speech-bar {
     left: 16px; right: 16px;
@@ -1031,4 +1320,116 @@ body {
 @keyframes officeEnter {
   from { opacity: 0; transform: scale(1.08); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* ============================================================================
+   Recruiter Menu — Sims-style hire panel
+   ============================================================================ */
+.recruiter-menu {
+  position: fixed;
+  z-index: 500;
+  width: 260px;
+  background: rgba(32, 28, 24, 0.96);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 60px rgba(212, 165, 69, 0.08);
+  overflow: hidden;
+  transform-origin: bottom center;
+  animation: recruiterSlideIn 0.25s ease-out;
+}
+.recruiter-menu.hidden {
+  display: none;
+}
+@keyframes recruiterSlideIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.recruiter-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.recruiter-menu-icon {
+  font-size: 20px;
+}
+.recruiter-menu-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.recruiter-menu-options {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hire-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  border: 1px solid transparent;
+}
+.hire-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(212, 165, 69, 0.2);
+}
+.hire-option:active {
+  transform: scale(0.98);
+}
+.hire-option.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.hire-option-icon {
+  font-size: 22px;
+  width: 32px;
+  text-align: center;
+}
+.hire-option-info {
+  flex: 1;
+}
+.hire-option-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.hire-option-desc {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.hire-option-cost {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-honey);
+  white-space: nowrap;
+}
+.recruiter-menu-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+}
+.recruiter-footer-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.recruiter-footer-label {
+  font-weight: 400;
+  color: var(--text-secondary);
 }

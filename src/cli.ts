@@ -30,7 +30,8 @@ function printHelp() {
 
   Commands:
     start          Start the office server (default)
-    setup          Configure Claude Code hooks for current project
+    setup          Re-install Claude Code hooks (auto-installed on startup)
+    uninstall      Remove BeeHaven hooks from ~/.claude/settings.json
     login          Link your Clearly account for cloud features
     logout         Unlink your Clearly account
 
@@ -88,6 +89,12 @@ async function run() {
     case 'setup': {
       const { setupHooks } = await import('./setup-hooks.js');
       setupHooks();
+      break;
+    }
+
+    case 'uninstall': {
+      const { removeHooks } = await import('./setup-hooks.js');
+      removeHooks();
       break;
     }
 

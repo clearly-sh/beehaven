@@ -10,10 +10,12 @@ export const HONEY_REWARDS: Partial<Record<HookEventName, number>> = {
   SessionStart:      5,
   UserPromptSubmit:  2,
   PreToolUse:        1,
+  PermissionRequest: 1,
   PostToolUse:       1,
   SubagentStart:     3,
   Stop:              5,
   SessionEnd:       10,
+  TaskCompleted:     3,
 };
 
 // ---- Shop Catalog ----

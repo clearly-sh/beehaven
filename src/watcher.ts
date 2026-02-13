@@ -15,6 +15,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 export class ClaudeWatcher extends EventEmitter {
   private lastSize = 0;
   private processing = false;
+  private fsWatcher: ReturnType<typeof watch> | null = null;
 
   start() {
     // Create events file if it doesn't exist
@@ -26,13 +27,13 @@ export class ClaudeWatcher extends EventEmitter {
     this.lastSize = statSync(EVENTS_FILE).size;
 
     // Watch for changes
-    const watcher = watch(EVENTS_FILE, {
+    this.fsWatcher = watch(EVENTS_FILE, {
       persistent: true,
       usePolling: true,
       interval: 100,
     });
 
-    watcher.on('change', () => {
+    this.fsWatcher.on('change', () => {
       this.readNewLines();
     });
 
@@ -40,6 +41,14 @@ export class ClaudeWatcher extends EventEmitter {
     this.rotateIfNeeded();
 
     console.log(`[watcher] Watching ${EVENTS_FILE} for Claude Code events...`);
+  }
+
+  /** Stop watching for file changes */
+  stop() {
+    if (this.fsWatcher) {
+      this.fsWatcher.close();
+      this.fsWatcher = null;
+    }
   }
 
   /** Rotate the events file if it exceeds MAX_FILE_SIZE */

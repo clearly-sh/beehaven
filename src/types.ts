@@ -7,6 +7,7 @@ export type HookEventName =
   | 'SessionStart'
   | 'UserPromptSubmit'
   | 'PreToolUse'
+  | 'PermissionRequest'
   | 'PostToolUse'
   | 'PostToolUseFailure'
   | 'Stop'
@@ -14,7 +15,9 @@ export type HookEventName =
   | 'SubagentStart'
   | 'SubagentStop'
   | 'Notification'
-  | 'PreCompact';
+  | 'PreCompact'
+  | 'TeammateIdle'
+  | 'TaskCompleted';
 
 /** Raw event from Claude Code hooks */
 export interface ClaudeEvent {
@@ -38,6 +41,18 @@ export interface ClaudeEvent {
   // Subagent events
   agent_id?: string;
   agent_type?: string;
+  // Notification events
+  notification_type?: string;
+  message?: string;
+  // PreCompact events
+  trigger?: string;
+  // Team events
+  teammate_name?: string;
+  team_name?: string;
+  task_id?: string;
+  task_subject?: string;
+  // PermissionRequest events
+  reason?: string;
   // Transcript (present on most events)
   transcript_path?: string;
 }
@@ -70,11 +85,24 @@ export type BeeActivity =
   | 'browsing'
   | 'celebrating';
 
+/** Hired bee type */
+export type HiredBeeType = 'developer' | 'designer' | 'manager' | 'researcher' | 'devops';
+
+/** A hired bee persisted to config */
+export interface HiredBee {
+  id: string;
+  type: HiredBeeType;
+  name: string;
+  hiredAt: number;
+  customTools?: string[];
+  customColor?: string;
+}
+
 /** A bee character in the office */
 export interface BeeCharacter {
   id: string;
   name: string;
-  role: 'queen' | 'worker' | 'narrator' | 'recruiter';
+  role: 'queen' | 'worker' | 'narrator' | 'recruiter' | 'hired';
   room: Room;
   activity: BeeActivity;
   x: number;
@@ -85,6 +113,8 @@ export interface BeeCharacter {
   message?: string;
   messageTimeout?: number;
   project?: string;
+  hiredType?: HiredBeeType;
+  hiredTools?: string[];
 }
 
 /** Room definition with position coordinates */
@@ -109,6 +139,8 @@ export interface OfficeState {
   projects?: string[];
   terminalLog?: TerminalEntry[];
   shop: ShopState;
+  officeLevel: number;
+  unlockedRooms: Room[];
 }
 
 export interface EventLogEntry {
@@ -223,6 +255,7 @@ export interface OnboardingConfig {
   };
   user?: ClearlyProfile;
   shop?: ShopPersistData;
+  team?: HiredBee[];
 }
 
 /** State of the entire building (returned from relay) */

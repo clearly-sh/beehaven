@@ -219,7 +219,7 @@ export async function main(opts: StartOptions = {}) {
   // Initialize components
   const config = loadConfig();
   const watcher = new ClaudeWatcher();
-  const office = new Office(config.shop);
+  const office = new Office(config.shop, config.team);
   const server = new Server(port);
   const relay = new Relay();
   const voice = new Voice({
@@ -276,6 +276,16 @@ export async function main(opts: StartOptions = {}) {
       office.addTerminalEntry({
         event: 'PreToolUse',
         content: detail,
+        timestamp: new Date().toISOString(),
+        project: proj,
+        role: 'tool',
+      });
+    }
+
+    if (event.hook_event_name === 'PermissionRequest' && event.tool_name) {
+      office.addTerminalEntry({
+        event: 'PermissionRequest',
+        content: `Waiting for approval: ${event.tool_name}`,
         timestamp: new Date().toISOString(),
         project: proj,
         role: 'tool',
@@ -384,9 +394,27 @@ export async function main(opts: StartOptions = {}) {
     console.log('  Clearly: Not linked (run: beehaven login)');
   }
   console.log('');
-  console.log('  Waiting for Claude Code events...');
-  console.log('  (Make sure hooks are configured — run: beehaven setup)');
+  console.log('  Hooks: auto-configured (~/.claude/settings.json)');
+  console.log('  To remove hooks: beehaven uninstall');
   console.log('');
+  console.log('  Waiting for Claude Code events...');
+  console.log('');
+
+  // Graceful shutdown — kill orphans on Ctrl+C or SIGTERM
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n  [beehaven] ${signal} received — saving state and shutting down...`);
+    try { saveShopToConfig(office.shopPersistData()); } catch { /* best effort */ }
+    try { office.saveSession(); } catch { /* best effort */ }
+    try { watcher.stop(); } catch { /* best effort */ }
+    try { relay.stop(); } catch { /* best effort */ }
+    // Give WebSocket clients a moment to disconnect
+    setTimeout(() => process.exit(0), 300);
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   // Auto-open browser
   if (opts.openBrowser !== false) {
