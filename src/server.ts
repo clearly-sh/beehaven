@@ -11,7 +11,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
-import type { BeeHavenCommand, OfficeState, WSMessage, OnboardingConfig, HiredBeeType } from './types.js';
+import type { BeeHavenCommand, OfficeState, WSMessage, OnboardingConfig, HiredBeeType, LinkedFolder } from './types.js';
 import { Voice } from './voice.js';
 import { Relay, CLEARLY_RELAY_URL } from './relay.js';
 import { Office } from './office.js';
@@ -50,6 +50,7 @@ export class Server {
   private relay: Relay | null = null;
   private office: Office | null = null;
   private voiceRequested = false;
+  private linkedFolders: Record<string, LinkedFolder> | null = null;
 
   /** Set the Voice instance for STT transcription */
   setVoice(voice: Voice) {
@@ -64,6 +65,11 @@ export class Server {
   /** Set the Office state engine */
   setOffice(office: Office) {
     this.office = office;
+  }
+
+  /** Set linked folders for broadcast */
+  setLinkedFolders(folders: Record<string, LinkedFolder>) {
+    this.linkedFolders = folders;
   }
 
   constructor(private port = 3333) {
@@ -479,6 +485,32 @@ export class Server {
       res.json(state);
     });
 
+    // Story mode mapping
+    this.app.post('/api/story/mapping', (req, res) => {
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      const mapping = req.body;
+      if (!mapping?.worldId || !mapping?.worldTitle) {
+        res.status(400).json({ error: 'Missing worldId or worldTitle' });
+        return;
+      }
+      this.office.updateStoryMapping(mapping);
+      this.broadcastState(this.office.getState());
+      res.json({ ok: true });
+    });
+
+    this.app.post('/api/story/clear', (_req, res) => {
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      this.office.clearStoryMapping();
+      this.broadcastState(this.office.getState());
+      res.json({ ok: true });
+    });
+
     // WebSocket connections
     this.wss.on('connection', (ws) => {
       this.clients.add(ws);
@@ -583,6 +615,15 @@ export class Server {
     }
     if (this.relay?.isConnected()) {
       payload.syncStatus = this.relay.getSyncStatus();
+    }
+    if (this.linkedFolders) {
+      payload.folderSync = {
+        linkedFolders: Object.entries(this.linkedFolders).map(([path, link]) => ({
+          path,
+          brandId: link.brandId,
+          linkedAt: link.linkedAt,
+        })),
+      };
     }
     this.broadcastMessage({ type: 'state', payload });
   }

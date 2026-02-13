@@ -347,6 +347,100 @@ export class Relay {
     }
   }
 
+  // ── Folder Sync Methods ──────────────────────────────────────────────────
+
+  /** Upload a file to Cloud Storage via signed URL, then update manifest in Firestore */
+  async syncFileUpload(
+    brandId: string,
+    relativePath: string,
+    content: Buffer,
+    hash: string,
+  ): Promise<void> {
+    if (!this.config || !this.connected) return;
+
+    try {
+      const storagePath = `projects/${brandId}/assets/${relativePath}`;
+      const result = await this.post('get-upload-url', {
+        path: storagePath,
+        contentType: this.getMimeType(relativePath),
+      });
+      if (!result?.uploadUrl) return;
+
+      await fetch(result.uploadUrl as string, {
+        method: 'PUT',
+        headers: { 'Content-Type': this.getMimeType(relativePath) },
+        body: new Uint8Array(content),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      await this.post('file-sync', {
+        brandId,
+        action: 'upsert',
+        file: { path: relativePath, hash, size: content.length, storagePath },
+      });
+
+      this.lastSyncAt = Date.now();
+    } catch (err: any) {
+      console.error(`[relay] File upload failed (${relativePath}): ${err.message}`);
+    }
+  }
+
+  /** Notify cloud that a synced file was deleted */
+  async syncFileDelete(brandId: string, relativePath: string): Promise<void> {
+    if (!this.config || !this.connected) return;
+
+    try {
+      await this.post('file-sync', {
+        brandId,
+        action: 'delete',
+        file: { path: relativePath },
+      });
+    } catch (err: any) {
+      console.error(`[relay] File delete failed (${relativePath}): ${err.message}`);
+    }
+  }
+
+  /** Update brand sync metadata (localPath, device, status) */
+  async updateBrandSync(
+    brandId: string,
+    data: { localPath?: string; syncDevice?: string; syncStatus?: string },
+  ): Promise<void> {
+    if (!this.config) return;
+
+    try {
+      await this.post('brand-sync', { brandId, ...data });
+    } catch (err: any) {
+      console.error(`[relay] Brand sync update failed: ${err.message}`);
+    }
+  }
+
+  /** List user's projects/brands from Clearly */
+  async listProjects(): Promise<Array<{ id: string; name: string }> | null> {
+    if (!this.config) return null;
+
+    try {
+      const result = await this.post('list-projects', {});
+      return (result?.projects as Array<{ id: string; name: string }>) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Get MIME type from file extension */
+  private getMimeType(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+    const types: Record<string, string> = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+      avif: 'image/avif', ico: 'image/x-icon', bmp: 'image/bmp',
+      woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+      json: 'application/json', css: 'text/css', md: 'text/markdown',
+      pdf: 'application/pdf', yaml: 'text/yaml', yml: 'text/yaml',
+      txt: 'text/plain', scss: 'text/x-scss', less: 'text/x-less',
+    };
+    return types[ext] || 'application/octet-stream';
+  }
+
   /** Sync project documentation files (README.md, CLAUDE.md, package.json) to Firestore */
   async uploadDocs(project: string, projectRoot: string): Promise<void> {
     if (!this.config || !this.connected) return;
@@ -505,7 +599,7 @@ export class Relay {
 
   /** POST to the relay endpoint */
   private async post(
-    type: 'state' | 'event' | 'heartbeat' | 'batch' | 'building' | 'claim-desk' | 'project-sync' | 'get-upload-url' | 'doc-sync',
+    type: 'state' | 'event' | 'heartbeat' | 'batch' | 'building' | 'claim-desk' | 'project-sync' | 'get-upload-url' | 'doc-sync' | 'file-sync' | 'brand-sync' | 'list-projects',
     data: Record<string, unknown>
   ): Promise<Record<string, unknown> | null> {
     if (!this.config) return null;

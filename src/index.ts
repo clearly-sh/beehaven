@@ -10,8 +10,10 @@ import { Voice } from './voice.js';
 import { Relay } from './relay.js';
 import { ensureHooks } from './setup-hooks.js';
 
+import { FolderWatcher, getLinkedFolders } from './folder-sync.js';
+
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, hostname } from 'os';
 import { join } from 'path';
 import type { BeeHavenCommand, OnboardingConfig, ShopPersistData } from './types.js';
 
@@ -261,6 +263,7 @@ export async function main(opts: StartOptions = {}) {
   server.setVoice(voice);
   server.setRelay(relay);
   server.setOffice(office);
+  server.setLinkedFolders(getLinkedFolders());
 
   // When relay heartbeat returns profile, save to config
   relay.onProfileUpdate = (profile) => {
@@ -411,6 +414,32 @@ export async function main(opts: StartOptions = {}) {
   watcher.start();
   await relay.start();
 
+  // Start folder sync watchers for any linked projects
+  const linkedFolders = getLinkedFolders();
+  const folderWatchers: FolderWatcher[] = [];
+
+  for (const [folderPath, link] of Object.entries(linkedFolders)) {
+    if (!existsSync(folderPath)) continue;
+
+    const fw = new FolderWatcher(folderPath, link.brandId, relay);
+    fw.on('syncing', (count: number) => {
+      console.log(`[folder-sync] Syncing ${count} files from ${folderPath}...`);
+    });
+    fw.on('synced', (count: number) => {
+      console.log(`[folder-sync] Synced ${count} files from ${folderPath}`);
+    });
+    fw.start();
+    folderWatchers.push(fw);
+
+    if (relay.isConnected()) {
+      relay.updateBrandSync(link.brandId, {
+        localPath: folderPath,
+        syncDevice: hostname(),
+        syncStatus: 'connected',
+      });
+    }
+  }
+
   const url = `http://localhost:${port}`;
   console.log('');
   console.log(`  Open ${url} to see the office`);
@@ -425,6 +454,9 @@ export async function main(opts: StartOptions = {}) {
     console.log('  Clearly: Not linked (run: beehaven login)');
   }
   console.log('');
+  if (folderWatchers.length > 0) {
+    console.log(`  Folder sync: ${folderWatchers.length} linked folder(s)`);
+  }
   console.log('  Hooks: auto-configured (~/.claude/settings.json)');
   console.log('  To remove hooks: beehaven uninstall');
   console.log('');
@@ -440,6 +472,11 @@ export async function main(opts: StartOptions = {}) {
     try { saveShopToConfig(office.shopPersistData()); } catch { /* best effort */ }
     try { office.saveSession(); } catch { /* best effort */ }
     try { watcher.stop(); } catch { /* best effort */ }
+    // Stop folder watchers and mark brands disconnected
+    for (const fw of folderWatchers) {
+      try { fw.stop(); } catch { /* best effort */ }
+      try { relay.updateBrandSync(fw.brandId, { syncStatus: 'disconnected' }); } catch { /* best effort */ }
+    }
     try { relay.stop(); } catch { /* best effort */ }
     // Give WebSocket clients a moment to disconnect
     setTimeout(() => process.exit(0), 300);
