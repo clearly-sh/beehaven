@@ -115,6 +115,10 @@ export interface BeeCharacter {
   project?: string;
   hiredType?: HiredBeeType;
   hiredTools?: string[];
+  /** Story mode: character name from StoryWorld this bee represents */
+  storyCharacter?: string;
+  /** Story mode: technical mapping (service/module name) */
+  storyTechnicalMapping?: string;
 }
 
 /** Room definition with position coordinates */
@@ -141,6 +145,24 @@ export interface OfficeState {
   shop: ShopState;
   officeLevel: number;
   unlockedRooms: Room[];
+  /** Story mode: active story world mapping */
+  storyMapping?: StoryBeehavenState;
+}
+
+/** Story-driven development state for BeeHaven visualization */
+export interface StoryBeehavenState {
+  worldId: string;
+  worldTitle: string;
+  genre: string;
+  currentChapter: number;
+  /** Character name → bee ID mapping */
+  characterToBee: Record<string, string>;
+  /** Story location → office room mapping */
+  locationToRoom: Record<string, Room>;
+  /** Current scene narration displayed in terminal */
+  activeNarration?: string;
+  /** Characters currently active in the scene */
+  activeCharacters?: string[];
 }
 
 export interface EventLogEntry {
@@ -256,6 +278,7 @@ export interface OnboardingConfig {
   user?: ClearlyProfile;
   shop?: ShopPersistData;
   team?: HiredBee[];
+  linkedFolders?: Record<string, LinkedFolder>;
 }
 
 /** State of the entire building (returned from relay) */
@@ -326,6 +349,23 @@ export interface BeeHavenCommand {
   title?: string;
   status?: BoardItem['status'];
   itemId?: string;
+}
+
+// ============================================================================
+// Folder Sync Types
+// ============================================================================
+
+/** A file change detected by the folder watcher */
+export interface FileChange {
+  action: 'add' | 'change' | 'delete';
+  relativePath: string;
+  ext: string;
+}
+
+/** A linked folder persisted to config */
+export interface LinkedFolder {
+  brandId: string;
+  linkedAt: number;
 }
 
 // ============================================================================

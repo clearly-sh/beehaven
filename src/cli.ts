@@ -34,9 +34,12 @@ function printHelp() {
     uninstall      Remove BeeHaven hooks from ~/.claude/settings.json
     login          Link your Clearly account for cloud features
     logout         Unlink your Clearly account
+    link           Link current folder to a Clearly project for asset sync
+    unlink         Unlink current folder from asset sync
 
   Options:
     --port <n>     Server port (default: 3333, env: BEEHAVEN_PORT)
+    --project <id> Clearly project/brand ID (for link command)
     --no-open      Don't auto-open browser
     --verbose      Enable verbose logging
     --help, -h     Show this help
@@ -47,6 +50,8 @@ function printHelp() {
     beehaven --port 4000        # Start on custom port
     beehaven setup              # Configure hooks in current project
     beehaven login              # Link Clearly account
+    beehaven link               # Link folder to Clearly project
+    beehaven link --project abc # Link to specific project ID
 `);
 }
 
@@ -55,6 +60,7 @@ async function run() {
     allowPositionals: true,
     options: {
       port: { type: 'string' },
+      project: { type: 'string' },
       open: { type: 'boolean', default: true },
       'no-open': { type: 'boolean', default: false },
       verbose: { type: 'boolean', default: false },
@@ -107,6 +113,22 @@ async function run() {
     case 'logout': {
       const { logout } = await import('./setup-relay.js');
       logout();
+      break;
+    }
+
+    case 'link': {
+      const { Relay } = await import('./relay.js');
+      const { linkProject } = await import('./folder-sync.js');
+      const relay = new Relay();
+      await linkProject(relay, undefined, values.project);
+      break;
+    }
+
+    case 'unlink': {
+      const { Relay } = await import('./relay.js');
+      const { unlinkProject } = await import('./folder-sync.js');
+      const relay = new Relay();
+      await unlinkProject(relay);
       break;
     }
 
