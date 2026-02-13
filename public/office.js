@@ -11,28 +11,28 @@ const COORD_SCALE = 2; // Backend rooms are half-scale
 
 // WeWork palette — warm charcoal, natural oak, sage green, honey gold
 const P = {
-  floor:      0x201C18,
-  floorLine:  0x2A2620,
-  wall:       0x2D2925,
-  wallDark:   0x1A1714,
-  wood:       0x9C8868,
-  woodDark:   0x6B573D,
-  glass:      0x2A3530,
-  glassBrd:   0x4A6050,
-  cushion:    0x3D5A45,
-  cushionAlt: 0x8B6340,
-  plant:      0x4A7A52,
-  plantDark:  0x2D5A35,
-  planter:    0x5C4A38,
-  honey:      0xD4A545,
-  white:      0xE8DED0,
-  offWhite:   0x3A352E,
-  dark:       0x141210,
-  leather:    0x6B4830,
+  floor:      0x2A2520,
+  floorLine:  0x36322A,
+  wall:       0x3A3530,
+  wallDark:   0x24201A,
+  wood:       0xB89E72,
+  woodDark:   0x806848,
+  glass:      0x354540,
+  glassBrd:   0x5A7A65,
+  cushion:    0x4A7A55,
+  cushionAlt: 0xA87A50,
+  plant:      0x5AAA65,
+  plantDark:  0x3A7A45,
+  planter:    0x7A6048,
+  honey:      0xE8B84D,
+  white:      0xF0E8DA,
+  offWhite:   0x454038,
+  dark:       0x1A1816,
+  leather:    0x8A5C3A,
   monitor:    0x1A1A1A,
-  monGlow:    0xE8DED0,
-  led:        0x4ADE80,
-  ledRed:     0xEF4444,
+  monGlow:    0xF5EDE0,
+  led:        0x50F090,
+  ledRed:     0xFF5555,
 };
 
 // --- Bee Color Helpers ---
@@ -45,15 +45,15 @@ function darkenColor(color, factor) {
 
 // Room definitions (backend coords * COORD_SCALE)
 const ROOMS = [
-  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0x302820, accent: 0xD4A545 },
-  { id: 'library',      label: 'Library',      x: 250,  y: 40,  w: 280, h: 340, color: 0x253028, accent: 0x3D8A55 },
-  { id: 'studio',       label: 'Studio',       x: 550,  y: 40,  w: 300, h: 340, color: 0x252834, accent: 0x5B9BD5 },
-  { id: 'web-booth',    label: 'Web',          x: 40,   y: 40,  w: 80,  h: 100, color: 0x282634, accent: 0x7B68EE },
-  { id: 'phone-b',      label: 'Focus',        x: 1060, y: 40,  w: 80,  h: 100, color: 0x253032, accent: 0x6BA3BE },
-  { id: 'server-room',  label: 'Server Room',  x: 1000, y: 470, w: 120, h: 160, color: 0x302220, accent: 0xEF6B4A },
-  { id: 'meeting-room', label: 'Conference',   x: 40,   y: 470, w: 200, h: 200, color: 0x223028, accent: 0x4ADE80 },
-  { id: 'water-cooler', label: 'Lounge',       x: 640,  y: 470, w: 250, h: 200, color: 0x2A2832, accent: 0xC490D0 },
-  { id: 'coffee',       label: 'Kitchen',      x: 340,  y: 470, w: 200, h: 200, color: 0x30281C, accent: 0xD4A545 },
+  { id: 'lobby',        label: 'Reception',    x: 40,   y: 400, w: 200, h: 60,  color: 0x3A3228, accent: 0xE8B84D },
+  { id: 'library',      label: 'Library',      x: 250,  y: 40,  w: 280, h: 340, color: 0x2D3E32, accent: 0x4AAE65 },
+  { id: 'studio',       label: 'Studio',       x: 550,  y: 40,  w: 300, h: 340, color: 0x2E3340, accent: 0x6CB0E8 },
+  { id: 'web-booth',    label: 'Web',          x: 40,   y: 40,  w: 80,  h: 100, color: 0x322E42, accent: 0x907CF5 },
+  { id: 'phone-b',      label: 'Focus',        x: 1060, y: 40,  w: 80,  h: 100, color: 0x2D3E40, accent: 0x7DBDD5 },
+  { id: 'server-room',  label: 'Server Room',  x: 1000, y: 470, w: 120, h: 160, color: 0x3E2C28, accent: 0xFF7D5A },
+  { id: 'meeting-room', label: 'Conference',   x: 40,   y: 470, w: 200, h: 200, color: 0x2C3E32, accent: 0x55F090 },
+  { id: 'water-cooler', label: 'Lounge',       x: 640,  y: 470, w: 250, h: 200, color: 0x35303F, accent: 0xD5A0E5 },
+  { id: 'coffee',       label: 'Kitchen',      x: 340,  y: 470, w: 200, h: 200, color: 0x3E3424, accent: 0xE8B84D },
 ];
 
 // ── Player Collision System ──
@@ -158,10 +158,70 @@ let buildingTransitionTarget = 0;
 let buildingProjects = []; // project names for building view
 let buildingClickAreas = []; // { project, x, y, w, h } for click detection
 
+// --- City Scene State ---
+let sceneMode = 'office'; // 'office' | 'city'
+let sceneTransition = 0;  // 0 = office, 1 = city (animated)
+let sceneTransitionTarget = 0;
+let cityDirty = true;
+let activeCityProject = null;
+const projectCities = new Map(); // project name → cityData
+
+const CITY_ORIGIN_X = 60;
+const CITY_ORIGIN_Y = 50;
+const DISTRICT_COLS = 6;
+const DISTRICT_GAP = 24;
+const DISTRICT_LABEL_H = 22;
+const BUILDING_CELL = 52;
+
+const BUILDING_STYLES = {
+  ts:   { color: 0x4A8EC2, accent: 0x6CB0E8, name: 'glass' },
+  tsx:  { color: 0x4A8EC2, accent: 0x6CB0E8, name: 'glass' },
+  js:   { color: 0xC49A2A, accent: 0xE8B84D, name: 'tech' },
+  jsx:  { color: 0xC49A2A, accent: 0xE8B84D, name: 'tech' },
+  css:  { color: 0xA070C0, accent: 0xD5A0E5, name: 'art' },
+  scss: { color: 0xA070C0, accent: 0xD5A0E5, name: 'art' },
+  json: { color: 0xC05A3A, accent: 0xFF7D5A, name: 'warehouse' },
+  yaml: { color: 0xC05A3A, accent: 0xFF7D5A, name: 'warehouse' },
+  toml: { color: 0xC05A3A, accent: 0xFF7D5A, name: 'warehouse' },
+  md:   { color: 0x358050, accent: 0x4AAE65, name: 'library' },
+  txt:  { color: 0x358050, accent: 0x4AAE65, name: 'library' },
+  html: { color: 0x5090A0, accent: 0x7DBDD5, name: 'civic' },
+  sh:   { color: 0xB04030, accent: 0xE85A4A, name: 'factory' },
+  bash: { color: 0xB04030, accent: 0xE85A4A, name: 'factory' },
+};
+const DEFAULT_STYLE = { color: 0x666666, accent: 0x888888, name: 'office' };
+
+const INDICATOR_STYLES = {
+  bug:           { color: 0xFF4444, symbol: '!',  glow: 0xFF0000 },
+  feature:       { color: 0x44CC66, symbol: '+',  glow: 0x00FF44 },
+  refactor:      { color: 0x4488FF, symbol: '~',  glow: 0x0066FF },
+  priority:      { color: 0xFFAA00, symbol: '!!', glow: 0xFFCC00 },
+  'in-progress': { color: 0xFF8844, symbol: '>',  glow: 0xFF6600 },
+  done:          { color: 0x888888, symbol: 'v',  glow: 0x666666 },
+};
+
+// City state from server (indicators + board per project)
+let serverCityState = {};  // project → { indicators: [], board: [] }
+let boardOpen = false;
+let boardAddModalOpen = false;
+let boardAddSelectedIndicator = null;
+let hoveredBuilding = null;  // for tooltip
+
+function getStyleForExt(ext) {
+  return BUILDING_STYLES[ext] || DEFAULT_STYLE;
+}
+
 // --- Floating Terminal Window State ---
 const TERM_POSITIONS = ['pos-bl', 'pos-br', 'pos-tl', 'pos-tr'];
 const TERM_POSITION_KEY = 'beehaven-term-position';
 let termPosition = localStorage.getItem(TERM_POSITION_KEY) || 'pos-bl';
+// --- Team Panel State ---
+const TEAM_POSITIONS = ['pos-tr', 'pos-tl', 'pos-br', 'pos-bl'];
+const TEAM_POSITION_KEY = 'beehaven-team-position';
+let teamPosition = localStorage.getItem(TEAM_POSITION_KEY) || 'pos-tr';
+let teamPanelFingerprint = '';
+const avatarCache = {}; // key -> { canvas, key }
+
 let shopOpen = false;
 let accountOpen = false;
 let accountState = { linked: false, profile: null, tier: 'local', connected: false, syncStatus: null };
@@ -679,11 +739,13 @@ async function init() {
   layers.buildingOverlay = new Container();
   layers.buildingOverlay.visible = false;
 
-  // Camera container (zoom/pan) wraps officeRoot
+  // Camera container (zoom/pan) wraps officeRoot + cityRoot
   layers.camera = new Container();
   layers.officeRoot = new Container();
   layers.officeRoot.addChild(layers.floor, layers.rooms, layers.furniture, layers.bees, layers.ui);
-  layers.camera.addChild(layers.officeRoot);
+  layers.cityRoot = new Container();
+  layers.cityRoot.visible = false;
+  layers.camera.addChild(layers.officeRoot, layers.cityRoot);
   app.stage.addChild(layers.camera, layers.buildingOverlay);
 
   // Effects layer (between furniture and bees)
@@ -709,6 +771,8 @@ async function init() {
     updateVisualEffects();
     updateDoors();
     updateBuildingTransition();
+    updateSceneTransition();
+    if (sceneMode === 'city') updateCity();
     if (frame % 10 === 0) updateTeamIcons(); // Update role icons every 10 frames
   });
 
@@ -758,6 +822,9 @@ async function init() {
       }
       return;
     }
+
+    // No bee clicking in city mode
+    if (sceneMode === 'city') return;
 
     // Click-to-follow bee (or open recruiter menu)
     const canvasPos = clientToCanvas(e);
@@ -1414,7 +1481,7 @@ function drawRooms() {
           if (px + 10 > x + w - pad || py + 10 > y + h - pad) continue;
           const even = (row + col) % 2 === 0;
           fp.rect(px, py, even ? 10 : 5, even ? 5 : 10)
-            .fill({ color: even ? 0x5A4D3A : 0x4A3F30, alpha: 0.12 });
+            .fill({ color: even ? 0x5A4D3A : 0x4A3F30, alpha: 0.18 });
         }
       }
     } else if (room.id === 'studio') {
@@ -1426,7 +1493,7 @@ function drawRooms() {
           const th = Math.min(ts - 2, y + h - pad - ty);
           if (tw > 4 && th > 4) {
             fp.roundRect(tx, ty, tw, th, 1)
-              .stroke({ color: 0xffffff, width: 0.5, alpha: 0.04 });
+              .stroke({ color: 0xffffff, width: 0.5, alpha: 0.08 });
           }
         }
       }
@@ -1439,7 +1506,7 @@ function drawRooms() {
           const cw = Math.min(cs, x + w - pad - tx);
           const ch = Math.min(cs, y + h - pad - ty);
           if (cw > 2 && ch > 2) {
-            fp.rect(tx, ty, cw, ch).fill({ color: dark ? 0x000000 : 0xffffff, alpha: dark ? 0.08 : 0.04 });
+            fp.rect(tx, ty, cw, ch).fill({ color: dark ? 0x000000 : 0xffffff, alpha: dark ? 0.14 : 0.07 });
           }
         }
       }
@@ -1447,14 +1514,14 @@ function drawRooms() {
       // Carpet lines
       for (let ty = y + pad; ty < y + h - pad; ty += 8) {
         fp.moveTo(x + pad, ty).lineTo(x + w - pad, ty)
-          .stroke({ color: room.accent, width: 0.5, alpha: 0.06 });
+          .stroke({ color: room.accent, width: 0.5, alpha: 0.12 });
       }
     } else if (room.id === 'water-cooler') {
       // Diagonal wood planks
       for (let i = -h; i < w + h; i += 14) {
         fp.moveTo(x + Math.max(pad, i), y + pad + Math.max(0, -i))
           .lineTo(x + Math.min(w - pad, i + h), y + h - pad)
-          .stroke({ color: 0xffffff, width: 0.6, alpha: 0.04 });
+          .stroke({ color: 0xffffff, width: 0.6, alpha: 0.08 });
       }
     } else if (room.id === 'server-room') {
       // Raised floor grid with vent dots
@@ -1465,9 +1532,9 @@ function drawRooms() {
           const th = Math.min(ts - 2, y + h - pad - ty);
           if (tw > 4 && th > 4) {
             fp.roundRect(tx, ty, tw, th, 1)
-              .stroke({ color: room.accent, width: 0.5, alpha: 0.08 });
+              .stroke({ color: room.accent, width: 0.5, alpha: 0.14 });
             fp.circle(tx + tw / 2, ty + th / 2, 1.5)
-              .fill({ color: room.accent, alpha: 0.06 });
+              .fill({ color: room.accent, alpha: 0.10 });
           }
         }
       }
@@ -1477,7 +1544,7 @@ function drawRooms() {
         const sx = x + pad + (i * 41 % (w - 2 * pad));
         fp.moveTo(sx, y + pad)
           .quadraticCurveTo(sx + 30, y + h / 2, sx + 10, y + h - pad)
-          .stroke({ color: 0xffffff, width: 0.5, alpha: 0.03 });
+          .stroke({ color: 0xffffff, width: 0.5, alpha: 0.06 });
       }
     }
     c.addChild(fp);
@@ -1646,6 +1713,8 @@ function drawFurniture() {
     g.fill({ color: P.wood, alpha: 0.5 });
     g.roundRect(bx, 55, 90, 120, 4).fill(P.woodDark);
     g.roundRect(bx, 55, 90, 120, 4).stroke({ width: 2, color: P.wood });
+    // Interactable accent outline
+    g.roundRect(bx - 2, 53, 94, 124, 6).stroke({ width: 1.5, color: 0x4AAE65, alpha: 0.25 });
     g.rect(bx + 4, 59, 82, 112).fill({ color: 0x3A352E, alpha: 0.6 });
     for (let shelf = 0; shelf < 3; shelf++) {
       g.rect(bx + 2, 59 + shelf * 38 + 34, 86, 3).fill(P.woodDark);
@@ -1666,6 +1735,8 @@ function drawFurniture() {
     g.roundRect(dx, dy, 120, 50, 4).fill(P.wood);
     g.roundRect(dx, dy, 120, 50, 4).stroke({ width: 1.5, color: P.woodDark });
     g.roundRect(dx, dy, 120, 3, 2).fill({ color: 0xffffff, alpha: 0.12 });
+    // Interactable accent outline
+    g.roundRect(dx - 2, dy - 2, 124, 54, 6).stroke({ width: 1, color: 0x4AAE65, alpha: 0.22 });
     // Desk lamp
     g.rect(dx + 95, dy + 5, 3, 20).fill(P.wallDark);
     g.ellipse(dx + 96, dy + 3, 12, 6).fill({ color: 0xD4A545, alpha: 0.9 });
@@ -1685,6 +1756,8 @@ function drawFurniture() {
   g.ellipse(490, 332, 30, 8).fill({ color: 0x000000, alpha: 0.18 });
   g.roundRect(462, 286, 56, 44, 12).fill(P.cushion);
   g.roundRect(462, 286, 56, 44, 12).stroke({ width: 1.5, color: 0x2D4A35 });
+  // Interactable accent outline
+  g.roundRect(460, 284, 60, 48, 14).stroke({ width: 1, color: 0x4AAE65, alpha: 0.22 });
   g.roundRect(462, 286, 56, 4, 6).fill({ color: 0xffffff, alpha: 0.08 });
   g.roundRect(466, 290, 48, 36, 8).fill({ color: 0x4A7A52, alpha: 0.85 });
   // Side table
@@ -1728,6 +1801,8 @@ function drawFurniture() {
   // Standing desk at end
   const sdx = 790, sdy = 100;
   drawShadow(g, sdx, sdy, 55, 45, 4, 0.3);
+  // Interactable accent outline (studio blue)
+  g.roundRect(sdx - 2, sdy - 2, 59, 49, 6).stroke({ width: 1, color: 0x6CB0E8, alpha: 0.22 });
   g.roundRect(sdx, sdy, 55, 45, 4).fill(P.wood);
   g.roundRect(sdx, sdy, 55, 45, 4).stroke({ width: 1.5, color: P.woodDark });
   g.roundRect(sdx, sdy, 55, 3, 2).fill({ color: 0xffffff, alpha: 0.1 });
@@ -1742,6 +1817,7 @@ function drawFurniture() {
 
   // Whiteboard on studio right wall
   drawShadow(g, 842, 80, 8, 80, 2, 0.15);
+  g.roundRect(840, 78, 12, 84, 4).stroke({ width: 1, color: 0x6CB0E8, alpha: 0.20 });
   g.roundRect(842, 80, 8, 80, 2).fill(P.white);
   g.roundRect(842, 80, 8, 80, 2).stroke({ color: P.wallDark, width: 1.5 });
 
@@ -1752,6 +1828,8 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   { // meeting-room
   drawShadow(g, 70, 530, 140, 60, 6, 0.3);
+  // Interactable accent outline (meeting green)
+  g.roundRect(68, 528, 144, 64, 8).stroke({ width: 1.5, color: 0x55F090, alpha: 0.25 });
   g.roundRect(70, 530, 140, 60, 6).fill(P.wood);
   g.roundRect(70, 530, 140, 60, 6).stroke({ width: 1.5, color: P.woodDark });
   g.roundRect(70, 530, 140, 3, 3).fill({ color: 0xffffff, alpha: 0.1 });
@@ -1765,6 +1843,7 @@ function drawFurniture() {
   }
   // Whiteboard
   drawShadow(g, 46, 480, 8, 60, 2, 0.15);
+  g.roundRect(44, 478, 12, 64, 4).stroke({ width: 1, color: 0x55F090, alpha: 0.20 });
   g.roundRect(46, 480, 8, 60, 2).fill(P.white);
   g.roundRect(46, 480, 8, 60, 2).stroke({ color: P.wallDark, width: 1.5 });
   // Projector screen area
@@ -1788,6 +1867,8 @@ function drawFurniture() {
 
   // Espresso machine (commercial style)
   drawShadow(g, 360, 480, 50, 40, 6, 0.25);
+  // Interactable accent outline (kitchen honey)
+  g.roundRect(358, 478, 54, 44, 8).stroke({ width: 1, color: 0xE8B84D, alpha: 0.25 });
   g.roundRect(360, 480, 50, 40, 6).fill(0x555555);
   g.roundRect(360, 480, 50, 40, 6).stroke({ width: 1.5, color: 0x333333 });
   g.roundRect(364, 484, 42, 20, 3).fill(0x555555);
@@ -1797,6 +1878,8 @@ function drawFurniture() {
 
   // ★ FRUIT WATER DISPENSER — the WeWork signature! ★
   const fwx = 430, fwy = 468;
+  // Interactable accent outline (kitchen honey)
+  g.roundRect(fwx - 2, fwy - 2, 44, 56, 8).stroke({ width: 1, color: 0xE8B84D, alpha: 0.22 });
   g.roundRect(fwx, fwy, 40, 52, 6).fill({ color: 0xdbeafe, alpha: 0.5 });
   g.roundRect(fwx, fwy, 40, 52, 6).stroke({ width: 1.5, color: 0x93c5fd });
   g.roundRect(fwx + 3, fwy + 8, 34, 40, 4).fill({ color: 0xbfdbfe, alpha: 0.4 });
@@ -1827,6 +1910,8 @@ function drawFurniture() {
 
   // Second fruit water (cucumber mint)
   const fw2x = 490, fw2y = 468;
+  // Interactable accent outline (kitchen honey)
+  g.roundRect(fw2x - 2, fw2y - 2, 40, 52, 8).stroke({ width: 1, color: 0xE8B84D, alpha: 0.22 });
   g.roundRect(fw2x, fw2y, 36, 48, 6).fill({ color: 0xd1fae5, alpha: 0.4 });
   g.roundRect(fw2x, fw2y, 36, 48, 6).stroke({ width: 1.5, color: 0x86efac });
   g.roundRect(fw2x + 3, fw2y + 6, 30, 38, 4).fill({ color: 0xd1fae5, alpha: 0.3 });
@@ -1839,6 +1924,8 @@ function drawFurniture() {
   // Bar stools (modern swivel)
   for (let i = 0; i < 4; i++) {
     const sx = 360 + i * 50;
+    // Interactable accent ring (kitchen honey)
+    g.circle(sx, 568, 16).stroke({ width: 1, color: 0xE8B84D, alpha: 0.22 });
     g.circle(sx, 568, 14).fill(0x444444);
     g.circle(sx, 568, 10).fill(P.leather);
     g.rect(sx - 2, 574, 4, 14).fill(P.wallDark);
@@ -1868,6 +1955,8 @@ function drawFurniture() {
   // ═══════════════════════════════════════════════════════════════════════════
   { // lounge
   drawShadow(g, 660, 530, 200, 100, 4, 0.25);
+  // Interactable accent outline (lounge purple)
+  g.roundRect(658, 528, 204, 104, 6).stroke({ width: 1.5, color: 0xD5A0E5, alpha: 0.25 });
   // L-shaped sofa with cushion depth
   g.roundRect(660, 530, 200, 20, 4).fill(P.cushion);
   g.roundRect(660, 530, 200, 20, 4).stroke({ width: 1, color: 0x2D4A35 });
@@ -1894,6 +1983,8 @@ function drawFurniture() {
   for (let i = 0; i < 2; i++) {
     const sx = 1015 + i * 45;
     drawShadow(g, sx, 490, 30, 120, 3, 0.3);
+    // Interactable accent outline (server orange)
+    g.roundRect(sx - 2, 488, 34, 124, 5).stroke({ width: 1.5, color: 0xFF7D5A, alpha: 0.25 });
     // 3D side panel (right face of rack)
     g.moveTo(sx + 30, 490).lineTo(sx + 36, 486).lineTo(sx + 36, 606).lineTo(sx + 30, 610).closePath();
     g.fill({ color: 0x1f2937, alpha: 0.8 });
@@ -1922,6 +2013,8 @@ function drawFurniture() {
   // Web Booth — larger monitor with browser glow
   { // web-booth
   drawShadow(g, 52, 58, 50, 30, 3, 0.25);
+  // Interactable accent outline (web-booth indigo)
+  g.roundRect(50, 56, 54, 34, 5).stroke({ width: 1, color: 0x907CF5, alpha: 0.22 });
   g.roundRect(52, 58, 50, 30, 3).fill(P.wood);
   g.roundRect(52, 58, 50, 30, 3).stroke({ width: 1.5, color: P.woodDark });
   g.roundRect(52, 58, 50, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
@@ -1948,6 +2041,8 @@ function drawFurniture() {
 
   // Lobby reception desk
   drawShadow(g, 80, 415, 120, 20, 4, 0.25);
+  // Interactable accent outline (lobby honey)
+  g.roundRect(78, 413, 124, 24, 6).stroke({ width: 1, color: 0xE8B84D, alpha: 0.22 });
   g.roundRect(80, 415, 120, 20, 4).fill(P.wood);
   g.roundRect(80, 415, 120, 20, 4).stroke({ width: 1.5, color: P.woodDark });
   g.roundRect(80, 415, 120, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
@@ -1964,11 +2059,36 @@ function drawFurniture() {
   drawPlant(g, 1150, 280); // right corridor
 
   layers.furniture.addChild(g);
+
+  // Draw interaction point markers after all furniture
+  drawInteractionOutlines();
+}
+
+/** Draw subtle glow markers at every interaction point (seats, stands, stools) */
+function drawInteractionOutlines() {
+  const g = new Graphics();
+  for (const [roomId, points] of Object.entries(INTERACTION_POINTS)) {
+    const room = ROOMS.find(r => r.id === roomId);
+    if (!room) continue;
+    const color = room.accent;
+    for (const pt of points) {
+      const radius = pt.type === 'stool' ? 12 : pt.type === 'sofa' ? 14 : 16;
+      // Soft glow fill
+      g.circle(pt.x, pt.y, radius).fill({ color, alpha: 0.05 });
+      // Outline ring
+      g.circle(pt.x, pt.y, radius).stroke({ color, width: 1, alpha: 0.18 });
+      // Inner dot marker
+      g.circle(pt.x, pt.y, 2).fill({ color, alpha: 0.25 });
+    }
+  }
+  layers.furniture.addChild(g);
 }
 
 function drawDesk(g, x, y) {
   // Drop shadow
   drawShadow(g, x, y, 130, 55, 4, 0.3);
+  // Interactable accent outline (studio blue)
+  g.roundRect(x - 2, y - 2, 134, 59, 6).stroke({ width: 1, color: 0x6CB0E8, alpha: 0.22 });
   // Desk surface with bevel and outline
   g.roundRect(x, y, 130, 55, 4).fill(P.wood);
   g.roundRect(x, y, 130, 55, 4).stroke({ width: 1.5, color: P.woodDark });
@@ -1996,6 +2116,8 @@ function drawDesk(g, x, y) {
 
 function drawPhoneBooth(g, x, y) {
   drawShadow(g, x, y, 45, 25, 3, 0.25);
+  // Interactable accent outline (focus teal)
+  g.roundRect(x - 2, y - 2, 49, 29, 5).stroke({ width: 1, color: 0x7DBDD5, alpha: 0.22 });
   g.roundRect(x, y, 45, 25, 3).fill(P.wood);
   g.roundRect(x, y, 45, 25, 3).stroke({ width: 1.5, color: P.woodDark });
   g.roundRect(x, y, 45, 2, 1).fill({ color: 0xffffff, alpha: 0.1 });
@@ -2039,6 +2161,929 @@ function drawPlant(g, x, y, size = 1, potColor) {
     const leafColor = ((lx + ly) & 1) ? P.plant : P.plantDark;
     g.ellipse(x + lx * s * 0.8, y + ly * s * 0.7, 7 * s, 5 * s).fill(leafColor);
   }
+}
+
+// ============================================================================
+// City Scene — Full project file trees as cities with district layout
+// ============================================================================
+
+function createCityData(project) {
+  return {
+    project,
+    files: [],
+    directories: [],
+    buildings: new Map(),  // relativePath → building
+    districts: [],         // [{ name, x, y, w, h, files }]
+    loaded: false,
+    loading: false,
+    processedEventCount: 0,
+    cityBounds: { w: 0, h: 0 },
+  };
+}
+
+async function loadProjectCity(project) {
+  if (!project) return;
+  let city = projectCities.get(project);
+  if (city?.loaded || city?.loading) return;
+  if (!city) {
+    city = createCityData(project);
+    projectCities.set(project, city);
+  }
+  city.loading = true;
+  cityDirty = true;
+
+  try {
+    const res = await fetch(`/api/project-files/${encodeURIComponent(project)}`);
+    if (!res.ok) {
+      console.warn(`[city] Failed to load files for ${project}: ${res.status}`);
+      city.loading = false;
+      return;
+    }
+    const tree = await res.json();
+    city.files = tree.files;
+    city.directories = tree.directories;
+    city.loaded = true;
+    city.loading = false;
+    initializeCityBuildings(city);
+    // Apply existing event log activity
+    if (officeState?.eventLog) {
+      applyCityEvents(city, officeState.eventLog);
+    }
+    cityDirty = true;
+    console.log(`[city] Loaded ${city.files.length} files for ${project} (${city.districts.length} districts)`);
+  } catch (err) {
+    console.error(`[city] Error loading ${project}:`, err);
+    city.loading = false;
+  }
+}
+
+function initializeCityBuildings(city) {
+  city.buildings.clear();
+  city.districts = [];
+
+  // Group files by top-level directory
+  const groups = new Map();
+  for (const file of city.files) {
+    const topDir = file.dir || '.';
+    if (!groups.has(topDir)) groups.set(topDir, []);
+    groups.get(topDir).push(file);
+  }
+
+  // Sort: root files first, then alphabetical
+  const sortedDirs = Array.from(groups.keys()).sort((a, b) => {
+    if (a === '.') return -1;
+    if (b === '.') return 1;
+    return a.localeCompare(b);
+  });
+
+  // Layout districts left-to-right with row wrapping
+  let dx = CITY_ORIGIN_X;
+  let dy = CITY_ORIGIN_Y + 40; // room for title
+  let rowMaxH = 0;
+  const maxRowW = 1300; // max canvas width for wrapping
+
+  for (const dirName of sortedDirs) {
+    const dirFiles = groups.get(dirName);
+    const cols = Math.min(DISTRICT_COLS, dirFiles.length);
+    const rows = Math.ceil(dirFiles.length / cols);
+    const dw = cols * BUILDING_CELL + 16;
+    const dh = rows * BUILDING_CELL + DISTRICT_LABEL_H + 16;
+
+    // Wrap to next row
+    if (dx + dw > CITY_ORIGIN_X + maxRowW && dx > CITY_ORIGIN_X) {
+      dx = CITY_ORIGIN_X;
+      dy += rowMaxH + DISTRICT_GAP;
+      rowMaxH = 0;
+    }
+
+    const district = { name: dirName === '.' ? 'root' : dirName, x: dx, y: dy, w: dw, h: dh, files: dirFiles };
+    city.districts.push(district);
+
+    // Place buildings within district
+    dirFiles.forEach((file, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = dx + 8 + col * BUILDING_CELL;
+      const by = dy + DISTRICT_LABEL_H + 8 + row * BUILDING_CELL;
+
+      city.buildings.set(file.path, {
+        filename: file.name,
+        fullPath: file.path,
+        ext: file.ext,
+        dir: file.dir,
+        fileSize: file.size,
+        interactions: 0,
+        reads: 0,
+        writes: 0,
+        commands: 0,
+        pixelX: bx,
+        pixelY: by,
+        height: 1,
+        constructionProgress: 1,
+        sproutProgress: 1, // pre-existing files don't animate in
+        lastInteraction: 0,
+        style: getStyleForExt(file.ext).name,
+        indicators: [],
+      });
+    });
+
+    dx += dw + DISTRICT_GAP;
+    rowMaxH = Math.max(rowMaxH, dh);
+  }
+
+  // Compute bounds for camera centering
+  let maxX = 0, maxY = 0;
+  for (const d of city.districts) {
+    maxX = Math.max(maxX, d.x + d.w);
+    maxY = Math.max(maxY, d.y + d.h);
+  }
+  city.cityBounds = { w: maxX - CITY_ORIGIN_X + 40, h: maxY - CITY_ORIGIN_Y + 40 };
+}
+
+function applyCityEvents(city, eventLog) {
+  if (!eventLog || eventLog.length <= city.processedEventCount) return;
+
+  const newCount = eventLog.length - city.processedEventCount;
+  for (let i = newCount - 1; i >= 0; i--) {
+    const entry = eventLog[i];
+    if (entry.project && entry.project !== city.project) continue;
+    if (entry.event !== 'PreToolUse' || !entry.detail) continue;
+
+    const match = entry.detail.match(/^(Read|Edit|Write|Glob|Grep|Bash|WebFetch|WebSearch|NotebookEdit):\s*(.+)/);
+    if (!match) continue;
+
+    const tool = match[1];
+    const target = match[2].trim();
+    if (!target || target.includes('...') || target.length > 80) continue;
+    if (tool === 'Bash') continue;
+    if ((tool === 'Glob' || tool === 'Grep') && (target.includes('*') || target.includes('\\') || target.includes('|'))) continue;
+
+    // Find matching building — try exact path, then filename
+    let bldg = null;
+    for (const [path, b] of city.buildings) {
+      if (b.filename === target || path.endsWith('/' + target) || path === target) {
+        bldg = b;
+        break;
+      }
+    }
+    if (!bldg) continue;
+
+    bldg.interactions++;
+    bldg.lastInteraction = Date.now();
+    if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') bldg.reads++;
+    else if (tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit') bldg.writes++;
+    else bldg.commands++;
+
+    const newH = Math.min(12, Math.floor(bldg.interactions / 3) + 1);
+    if (newH > bldg.height) {
+      bldg.height = newH;
+      bldg.constructionProgress = 0;
+      cityDirty = true;
+    }
+  }
+  city.processedEventCount = eventLog.length;
+}
+
+// Simple seeded random for consistent window patterns
+function seededRand(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s & 0x7fffffff) / 0x7fffffff;
+  };
+}
+
+function blendColor(c1, c2, t) {
+  const r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
+  const r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF;
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return (r << 16) | (g << 8) | b;
+}
+
+function drawCityGround(container, city) {
+  const g = new Graphics();
+  const bw = city.cityBounds.w;
+  const bh = city.cityBounds.h;
+
+  // Dark ground plane
+  g.roundRect(CITY_ORIGIN_X - 30, CITY_ORIGIN_Y - 10, bw + 20, bh + 50, 10)
+    .fill(0x14141A);
+  g.roundRect(CITY_ORIGIN_X - 30, CITY_ORIGIN_Y - 10, bw + 20, bh + 50, 10)
+    .stroke({ color: 0x252530, width: 1 });
+
+  // Subtle grid dots for visual texture
+  for (let gx = CITY_ORIGIN_X; gx < CITY_ORIGIN_X + bw; gx += 40) {
+    for (let gy = CITY_ORIGIN_Y; gy < CITY_ORIGIN_Y + bh + 40; gy += 40) {
+      g.circle(gx, gy, 1).fill({ color: 0x333340, alpha: 0.4 });
+    }
+  }
+
+  container.addChild(g);
+}
+
+function drawDistrict(container, district) {
+  const g = new Graphics();
+
+  // District ground block
+  g.roundRect(district.x - 2, district.y - 2, district.w + 4, district.h + 4, 6)
+    .fill({ color: 0x1C1C26, alpha: 0.8 });
+  g.roundRect(district.x - 2, district.y - 2, district.w + 4, district.h + 4, 6)
+    .stroke({ color: 0x2A2A3A, width: 1 });
+
+  container.addChild(g);
+
+  // District label
+  const label = new Text({
+    text: district.name + '/',
+    style: {
+      fontFamily: 'Inter, monospace',
+      fontSize: 10,
+      fontWeight: '600',
+      fill: 0x6688AA,
+      letterSpacing: 0.5,
+    }
+  });
+  label.x = district.x + 8;
+  label.y = district.y + 5;
+  container.addChild(label);
+
+  // File count
+  const count = new Text({
+    text: `${district.files.length}`,
+    style: { fontFamily: 'Inter, sans-serif', fontSize: 8, fill: 0x555566 }
+  });
+  count.anchor.set(1, 0);
+  count.x = district.x + district.w - 6;
+  count.y = district.y + 7;
+  container.addChild(count);
+}
+
+function drawCityBuilding(container, building) {
+  const g = new Graphics();
+  const style = getStyleForExt(building.ext);
+  const untouched = building.interactions === 0;
+  const baseW = 36;
+  const floorH = 12;
+  const floors = building.height;
+  const totalH = floors * floorH + 6;
+  const cx = building.pixelX + BUILDING_CELL / 2;
+  const groundY = building.pixelY + BUILDING_CELL - 4;
+  const topY = groundY - totalH;
+  const leftX = cx - baseW / 2;
+
+  // Sprout animation
+  const sp = building.sproutProgress;
+  if (sp < 1) {
+    const scale = sp < 0.7 ? sp / 0.7 : 1 + 0.06 * Math.sin((sp - 0.7) / 0.3 * Math.PI);
+    g.pivot.set(cx, groundY);
+    g.position.set(cx, groundY);
+    g.scale.set(scale, scale);
+  }
+
+  if (untouched) {
+    // Simple dim building for untouched files
+    g.roundRect(leftX + 2, groundY - totalH + 3, baseW, totalH, 1)
+      .fill({ color: 0x000000, alpha: 0.15 });
+    g.roundRect(leftX, topY, baseW, totalH, 2).fill({ color: style.color, alpha: 0.35 });
+    g.roundRect(leftX, topY, baseW, totalH, 2).stroke({ color: blendColor(style.color, 0x000000, 0.2), width: 0.5, alpha: 0.4 });
+  } else {
+    // Shadow
+    g.roundRect(leftX + 3, groundY - totalH + 4, baseW, totalH, 2)
+      .fill({ color: 0x000000, alpha: 0.25 });
+
+    // Side face (pseudo-3D)
+    const sideW = 5;
+    g.moveTo(leftX + baseW, groundY);
+    g.lineTo(leftX + baseW + sideW, groundY - sideW);
+    g.lineTo(leftX + baseW + sideW, topY - sideW);
+    g.lineTo(leftX + baseW, topY);
+    g.closePath();
+    g.fill(blendColor(style.color, 0x000000, 0.3));
+
+    // Roof
+    g.moveTo(leftX, topY);
+    g.lineTo(leftX + sideW, topY - sideW);
+    g.lineTo(leftX + baseW + sideW, topY - sideW);
+    g.lineTo(leftX + baseW, topY);
+    g.closePath();
+    g.fill(blendColor(style.color, 0xffffff, 0.2));
+
+    // Front face
+    g.roundRect(leftX, topY, baseW, totalH, 2).fill(style.color);
+    g.roundRect(leftX, topY, baseW, totalH, 2).stroke({ color: blendColor(style.color, 0xffffff, 0.15), width: 0.5 });
+
+    // Floor lines
+    for (let f = 1; f < floors; f++) {
+      g.rect(leftX, groundY - f * floorH, baseW, 1).fill({ color: 0x000000, alpha: 0.1 });
+    }
+
+    // Windows
+    const wW = 5, wH = 7, wCols = 3;
+    const wGap = (baseW - wCols * wW) / (wCols + 1);
+    const rand = seededRand(building.filename.length * 137 + building.pixelX * 31 + building.pixelY * 17);
+    const isRecent = (Date.now() - building.lastInteraction) < 5000;
+
+    for (let f = 0; f < floors; f++) {
+      const fy = groundY - (f + 1) * floorH + (floorH - wH) / 2 + 1;
+      if (f === floors - 1 && building.constructionProgress < 1) continue;
+      for (let w = 0; w < wCols; w++) {
+        const wx = leftX + wGap + w * (wW + wGap);
+        const lit = isRecent ? rand() > 0.2 : rand() > 0.55;
+        if (lit) {
+          g.rect(wx - 1, fy - 1, wW + 2, wH + 2).fill({ color: 0xFFE4A0, alpha: 0.12 });
+          g.rect(wx, fy, wW, wH).fill({ color: 0xFFE4A0, alpha: 0.65 });
+        } else {
+          g.rect(wx, fy, wW, wH).fill({ color: 0x1A1A24, alpha: 0.5 });
+        }
+      }
+    }
+
+    // Construction animation
+    if (building.constructionProgress < 1) {
+      const cp = building.constructionProgress;
+      const fy = groundY - floors * floorH;
+      g.rect(leftX, fy, baseW, floorH).fill({ color: style.color, alpha: cp * 0.6 });
+      g.rect(leftX - 2, fy, 1.5, floorH).fill({ color: 0x888888, alpha: 0.3 * (1 - cp) });
+      g.rect(leftX + baseW + 0.5, fy, 1.5, floorH).fill({ color: 0x888888, alpha: 0.3 * (1 - cp) });
+      if (cp < 0.5) {
+        g.rect(cx - 0.5, fy - 10, 1, 10).fill({ color: 0xCCCCCC, alpha: 0.4 });
+        g.rect(cx - 8, fy - 10, 16, 1).fill({ color: 0xCCCCCC, alpha: 0.4 });
+      }
+    }
+
+    // Activity glow
+    if (isRecent) {
+      const ga = 0.12 * Math.max(0, 1 - (Date.now() - building.lastInteraction) / 5000);
+      g.roundRect(leftX - 3, topY - 3, baseW + 6, totalH + 6, 3)
+        .fill({ color: style.accent, alpha: ga });
+      g.roundRect(leftX - 3, topY - 3, baseW + 6, totalH + 6, 3)
+        .stroke({ color: style.accent, width: 1.5, alpha: ga * 2 });
+    }
+  }
+
+  container.addChild(g);
+
+  // Filename label
+  const label = new Text({
+    text: building.filename.length > 9 ? building.filename.slice(0, 8) + '..' : building.filename,
+    style: {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 7,
+      fill: untouched ? 0x555566 : 0x8888AA,
+      align: 'center',
+    }
+  });
+  label.anchor.set(0.5, 0);
+  label.x = cx;
+  label.y = groundY + 2;
+  container.addChild(label);
+
+  // Indicator badges above roofline
+  const indicators = building.indicators || [];
+  if (indicators.length > 0) {
+    const badgeSize = 8;
+    const badgeGap = 3;
+    const totalBadgeW = indicators.length * badgeSize + (indicators.length - 1) * badgeGap;
+    const startX = cx - totalBadgeW / 2;
+    const badgeY = topY - 14;
+
+    for (let bi = 0; bi < indicators.length; bi++) {
+      const ind = indicators[bi];
+      const indStyle = INDICATOR_STYLES[ind.type] || INDICATOR_STYLES.bug;
+      const bx = startX + bi * (badgeSize + badgeGap) + badgeSize / 2;
+
+      const badge = new Graphics();
+      // Glow pulse
+      const pulse = 0.3 + 0.2 * Math.sin(Date.now() / 400 + bi * 1.5);
+      badge.circle(bx, badgeY, badgeSize + 2).fill({ color: indStyle.glow, alpha: pulse * 0.3 });
+      // Badge circle
+      badge.circle(bx, badgeY, badgeSize / 2 + 1).fill(indStyle.color);
+      badge.circle(bx, badgeY, badgeSize / 2 + 1).stroke({ color: 0xFFFFFF, width: 0.5, alpha: 0.4 });
+      container.addChild(badge);
+
+      // Symbol text
+      const sym = new Text({
+        text: indStyle.symbol,
+        style: { fontFamily: 'Inter, sans-serif', fontSize: 6, fill: 0xFFFFFF, fontWeight: '700' }
+      });
+      sym.anchor.set(0.5, 0.5);
+      sym.x = bx;
+      sym.y = badgeY;
+      container.addChild(sym);
+    }
+  }
+}
+
+function drawCityTitle(container, city) {
+  const label = new Text({
+    text: activeCityProject ? `${activeCityProject}` : 'City',
+    style: {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 16,
+      fontWeight: '700',
+      fill: 0x7788AA,
+      letterSpacing: 1.5,
+    }
+  });
+  label.x = CITY_ORIGIN_X;
+  label.y = CITY_ORIGIN_Y + 4;
+  container.addChild(label);
+
+  // Building count + file count
+  const fileCount = city?.files?.length || 0;
+  const activeCount = city ? Array.from(city.buildings.values()).filter(b => b.interactions > 0).length : 0;
+  const countLabel = new Text({
+    text: `${fileCount} files${activeCount > 0 ? ` · ${activeCount} active` : ''}`,
+    style: {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 10,
+      fill: 0x556677,
+    }
+  });
+  countLabel.x = CITY_ORIGIN_X;
+  countLabel.y = CITY_ORIGIN_Y + 22;
+  container.addChild(countLabel);
+}
+
+function renderCity() {
+  layers.cityRoot.removeChildren();
+
+  const city = projectCities.get(activeCityProject);
+  if (!city?.loaded) {
+    const msg = city?.loading ? 'Scanning project files...' : 'Select a project to view city';
+    const loadText = new Text({
+      text: msg,
+      style: { fontFamily: 'Inter, sans-serif', fontSize: 14, fill: 0x556677 }
+    });
+    loadText.anchor.set(0.5, 0.5);
+    loadText.x = CANVAS_W / 2;
+    loadText.y = CANVAS_H / 2;
+    layers.cityRoot.addChild(loadText);
+    cityDirty = false;
+    return;
+  }
+
+  drawCityGround(layers.cityRoot, city);
+  drawCityTitle(layers.cityRoot, city);
+
+  // Districts
+  for (const district of city.districts) {
+    drawDistrict(layers.cityRoot, district);
+  }
+
+  // Buildings sorted by Y (back-to-front)
+  const sorted = Array.from(city.buildings.values()).sort((a, b) => a.pixelY - b.pixelY);
+  for (const bldg of sorted) {
+    drawCityBuilding(layers.cityRoot, bldg);
+  }
+
+  // Bee overlay — queen dot on active building
+  if (officeState?.bees) {
+    const queen = officeState.bees.find(b => b.role === 'queen');
+    if (queen?.message) {
+      const match = queen.message.match(/^(?:Read|Edit|Write|Glob|Grep|Bash|NotebookEdit):\s*(.+)/);
+      if (match) {
+        const fname = match[1].trim();
+        let activeBldg = null;
+        for (const [path, b] of city.buildings) {
+          if (b.filename === fname || path.endsWith('/' + fname) || path === fname) {
+            activeBldg = b;
+            break;
+          }
+        }
+        if (activeBldg) {
+          const bcx = activeBldg.pixelX + BUILDING_CELL / 2;
+          const bcy = activeBldg.pixelY + BUILDING_CELL - 4 - activeBldg.height * 12 - 14;
+          const dot = new Graphics();
+          const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+          dot.circle(bcx, bcy, 5 + pulse * 2).fill({ color: 0xE8B84D, alpha: 0.25 });
+          dot.circle(bcx, bcy, 4).fill(0xE8B84D);
+          dot.circle(bcx, bcy, 4).stroke({ color: 0xFFFFFF, width: 1 });
+          layers.cityRoot.addChild(dot);
+        }
+      }
+    }
+  }
+
+  cityDirty = false;
+}
+
+function updateCity() {
+  const city = projectCities.get(activeCityProject);
+  if (!city?.loaded) { if (cityDirty) renderCity(); return; }
+
+  let needsRedraw = false;
+  const now = Date.now();
+
+  for (const bldg of city.buildings.values()) {
+    if (bldg.sproutProgress < 1) {
+      bldg.sproutProgress = Math.min(1, bldg.sproutProgress + 0.04);
+      needsRedraw = true;
+    }
+    if (bldg.constructionProgress < 1) {
+      bldg.constructionProgress = Math.min(1, bldg.constructionProgress + 0.008);
+      needsRedraw = true;
+    }
+    if (now - bldg.lastInteraction < 5000) {
+      needsRedraw = true;
+    }
+    // Indicator glow pulses need continuous redraw
+    if (bldg.indicators?.length > 0) {
+      needsRedraw = true;
+    }
+  }
+
+  if (needsRedraw || cityDirty) {
+    renderCity();
+  }
+}
+
+function toggleCityView() {
+  if (sceneMode === 'office') {
+    sceneMode = 'city';
+    sceneTransitionTarget = 1;
+    document.getElementById('btn-city')?.classList.add('active');
+    document.getElementById('city-prompts')?.classList.remove('hidden');
+    activeCityProject = projectFilter || (officeState?.projects?.[0]) || null;
+    console.log(`[city] Toggle → city mode. project=${activeCityProject}, projects=${officeState?.projects?.join(',')}, filter=${projectFilter}`);
+    if (activeCityProject) {
+      loadProjectCity(activeCityProject);
+      // Camera center on city after load
+      setTimeout(() => {
+        const city = projectCities.get(activeCityProject);
+        if (city?.cityBounds) {
+          const cw = city.cityBounds.w || 800;
+          const ch = city.cityBounds.h || 600;
+          cameraTarget = {
+            x: -(CITY_ORIGIN_X + cw / 2 - CANVAS_W / 2),
+            y: -(CITY_ORIGIN_Y + ch / 2 - CANVAS_H / 2),
+            zoom: Math.min(0.9, CANVAS_W / (cw + 120), CANVAS_H / (ch + 120)),
+          };
+        }
+      }, 200);
+    }
+    // If no project, center camera on canvas center for fallback text
+    if (!activeCityProject) {
+      cameraTarget = { x: 0, y: 0, zoom: 1 };
+    }
+    cameraFollow = null;
+    cityDirty = true;
+  } else {
+    sceneMode = 'office';
+    sceneTransitionTarget = 0;
+    document.getElementById('btn-city')?.classList.remove('active');
+    document.getElementById('city-prompts')?.classList.add('hidden');
+    cameraTarget = { x: 0, y: 0, zoom: 1 };
+  }
+}
+
+function updateSceneTransition() {
+  if (sceneTransition !== sceneTransitionTarget) {
+    const speed = 0.06;
+    if (sceneTransition < sceneTransitionTarget) {
+      sceneTransition = Math.min(sceneTransitionTarget, sceneTransition + speed);
+    } else {
+      sceneTransition = Math.max(sceneTransitionTarget, sceneTransition - speed);
+    }
+    layers.officeRoot.alpha = 1 - sceneTransition;
+    layers.officeRoot.visible = sceneTransition < 0.95;
+    layers.cityRoot.alpha = sceneTransition;
+    layers.cityRoot.visible = sceneTransition > 0.05;
+  }
+}
+
+// --- Board Panel ---
+function toggleBoard() {
+  boardOpen = !boardOpen;
+  const panel = document.getElementById('board-panel');
+  const btn = document.getElementById('btn-board');
+  if (boardOpen) {
+    panel?.classList.remove('hidden');
+    btn?.classList.add('active');
+    // Fetch board data
+    if (activeCityProject) {
+      fetchBoardItems(activeCityProject);
+    }
+  } else {
+    panel?.classList.add('hidden');
+    btn?.classList.remove('active');
+  }
+}
+
+async function fetchBoardItems(project) {
+  try {
+    const res = await fetch(`/api/board/${encodeURIComponent(project)}`);
+    const data = await res.json();
+    if (data.items) renderBoard(data.items);
+  } catch (err) {
+    console.warn('[board] Fetch failed:', err);
+  }
+}
+
+function renderBoard(items) {
+  const backlog = document.getElementById('board-backlog');
+  const inProgress = document.getElementById('board-in-progress');
+  const done = document.getElementById('board-done');
+  if (!backlog || !inProgress || !done) return;
+
+  // Clear
+  backlog.innerHTML = '';
+  inProgress.innerHTML = '';
+  done.innerHTML = '';
+
+  const columns = { backlog, 'in-progress': inProgress, done };
+
+  if (!items || items.length === 0) {
+    backlog.innerHTML = '<div class="board-empty">No items yet</div>';
+    return;
+  }
+
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = 'board-item';
+    card.dataset.itemId = item.id;
+
+    const indStrip = document.createElement('div');
+    const validIndicators = ['bug', 'feature', 'refactor', 'priority', 'in-progress', 'done'];
+    const indClass = validIndicators.includes(item.indicator) ? item.indicator : '';
+    indStrip.className = 'board-item-indicator ' + indClass;
+    card.appendChild(indStrip);
+
+    const body = document.createElement('div');
+    body.className = 'board-item-body';
+
+    const title = document.createElement('div');
+    title.className = 'board-item-title';
+    title.textContent = item.title;
+    body.appendChild(title);
+
+    if (item.file) {
+      const file = document.createElement('div');
+      file.className = 'board-item-file';
+      file.textContent = item.file;
+      body.appendChild(file);
+
+      // Click to pan camera to building
+      card.addEventListener('click', () => panToBuilding(item.file));
+    }
+
+    card.appendChild(body);
+
+    // Action buttons
+    const actions = document.createElement('div');
+    actions.className = 'board-item-actions';
+
+    // Move forward button
+    const nextStatus = item.status === 'backlog' ? 'in-progress' : item.status === 'in-progress' ? 'done' : null;
+    if (nextStatus) {
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'board-item-btn';
+      moveBtn.textContent = '>';
+      moveBtn.title = `Move to ${nextStatus}`;
+      moveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sendCityCommand({ action: 'board-move', itemId: item.id, status: nextStatus });
+      });
+      actions.appendChild(moveBtn);
+    }
+
+    // Delete button
+    const delBtn = document.createElement('button');
+    delBtn.className = 'board-item-btn';
+    delBtn.textContent = 'x';
+    delBtn.title = 'Remove';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendCityCommand({ action: 'board-remove', itemId: item.id });
+    });
+    actions.appendChild(delBtn);
+
+    card.appendChild(actions);
+    const col = columns[item.status] || backlog;
+    col.appendChild(card);
+  }
+}
+
+function panToBuilding(filePath) {
+  if (!activeCityProject) return;
+  const city = projectCities.get(activeCityProject);
+  if (!city?.loaded) return;
+
+  let bldg = city.buildings.get(filePath);
+  if (!bldg) {
+    const fname = filePath.split('/').pop();
+    for (const [, b] of city.buildings) {
+      if (b.filename === fname) { bldg = b; break; }
+    }
+  }
+  if (!bldg) return;
+
+  // Switch to city mode if not already
+  if (sceneMode !== 'city') toggleCityView();
+
+  // Pan camera to center on this building
+  const bx = bldg.pixelX + BUILDING_CELL / 2;
+  const by = bldg.pixelY + BUILDING_CELL / 2;
+  cameraTarget = {
+    x: -(bx - CANVAS_W / 2),
+    y: -(by - CANVAS_H / 2),
+    zoom: 1.5,
+  };
+}
+
+async function sendCityCommand(command) {
+  if (!activeCityProject) return;
+  try {
+    await fetch('/api/city-command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: activeCityProject, command }),
+    });
+  } catch (err) {
+    console.warn('[city-command] Failed:', err);
+  }
+}
+
+function showBoardAddModal() {
+  boardAddModalOpen = true;
+  boardAddSelectedIndicator = null;
+  document.getElementById('board-add-modal')?.classList.remove('hidden');
+  const input = document.getElementById('board-add-input');
+  if (input) { input.value = ''; input.focus(); }
+  const fileInput = document.getElementById('board-add-file');
+  if (fileInput) fileInput.value = '';
+  document.querySelectorAll('.board-indicator-btn').forEach(b => b.classList.remove('selected'));
+}
+
+function hideBoardAddModal() {
+  boardAddModalOpen = false;
+  document.getElementById('board-add-modal')?.classList.add('hidden');
+}
+
+function submitBoardAdd() {
+  const title = document.getElementById('board-add-input')?.value?.trim();
+  if (!title) return;
+  const file = document.getElementById('board-add-file')?.value?.trim() || undefined;
+  sendCityCommand({
+    action: 'board-add',
+    title,
+    file,
+    indicator: boardAddSelectedIndicator || undefined,
+    status: 'backlog',
+  });
+  hideBoardAddModal();
+}
+
+// --- City Tooltip ---
+function updateCityTooltip(mouseX, mouseY) {
+  if (sceneMode !== 'city' || !activeCityProject) {
+    hideTooltip();
+    return;
+  }
+
+  const city = projectCities.get(activeCityProject);
+  if (!city?.loaded) { hideTooltip(); return; }
+
+  // Transform screen coords to world coords using camera
+  const cam = layers.camera;
+  const worldX = (mouseX - cam.x) / cam.scale.x;
+  const worldY = (mouseY - cam.y) / cam.scale.y;
+
+  // Hit test against buildings
+  let found = null;
+  for (const bldg of city.buildings.values()) {
+    if (worldX >= bldg.pixelX && worldX <= bldg.pixelX + BUILDING_CELL &&
+        worldY >= bldg.pixelY && worldY <= bldg.pixelY + BUILDING_CELL) {
+      found = bldg;
+      break;
+    }
+  }
+
+  if (found && found !== hoveredBuilding) {
+    hoveredBuilding = found;
+    showTooltip(found, mouseX, mouseY);
+  } else if (found && found === hoveredBuilding) {
+    positionTooltip(mouseX, mouseY);
+  } else if (!found) {
+    hoveredBuilding = null;
+    hideTooltip();
+  }
+}
+
+function showTooltip(building, mx, my) {
+  const tip = document.getElementById('city-tooltip');
+  if (!tip) return;
+
+  let html = `<div class="city-tooltip-file">${escapeHtml(building.filename)}</div>`;
+  html += `<div class="city-tooltip-path">${escapeHtml(building.fullPath)}</div>`;
+
+  const indicators = building.indicators || [];
+  if (indicators.length > 0) {
+    for (const ind of indicators) {
+      const indStyle = INDICATOR_STYLES[ind.type] || INDICATOR_STYLES.bug;
+      const colorHex = '#' + indStyle.color.toString(16).padStart(6, '0');
+      html += `<div class="city-tooltip-indicator">`;
+      html += `<span class="city-tooltip-badge" style="background:${colorHex}"></span>`;
+      html += `<span class="city-tooltip-note">${escapeHtml(ind.type)}: ${escapeHtml(ind.note || 'No details')}</span>`;
+      html += `</div>`;
+    }
+  }
+
+  html += `<div class="city-tooltip-stats">${building.interactions} interactions · ${building.reads}R ${building.writes}W · ${building.height}F</div>`;
+
+  tip.innerHTML = html;
+  tip.classList.remove('hidden');
+  positionTooltip(mx, my);
+}
+
+function positionTooltip(mx, my) {
+  const tip = document.getElementById('city-tooltip');
+  if (!tip) return;
+  const pad = 12;
+  let x = mx + pad;
+  let y = my + pad;
+  // Keep on screen
+  if (x + 280 > window.innerWidth) x = mx - 280 - pad;
+  if (y + 200 > window.innerHeight) y = my - 200 - pad;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+
+function hideTooltip() {
+  document.getElementById('city-tooltip')?.classList.add('hidden');
+}
+
+// --- City Prompt Templates ---
+const CITY_PROMPTS = {
+  analyze: `Analyze this project's codebase. For each file that has issues, bugs, or opportunities for improvement, emit a BEEHAVEN marker using this exact format in your response:
+<!--BEEHAVEN:{"action":"mark","file":"relative/path.ts","indicator":"bug","note":"description of the issue"}-->
+For features or improvements use indicator "feature", for refactoring opportunities use "refactor".
+Also create board items for the top 5 most important work items:
+<!--BEEHAVEN:{"action":"board-add","title":"Task title","file":"relative/path.ts","indicator":"bug","status":"backlog"}-->
+Start by reading the key files to understand the codebase structure.`,
+
+  bugs: `Review this project for bugs and potential issues. Focus on:
+- Runtime errors, unhandled edge cases
+- Security vulnerabilities
+- Race conditions, memory leaks
+For each bug found, emit a marker:
+<!--BEEHAVEN:{"action":"mark","file":"relative/path.ts","indicator":"bug","note":"description of the bug"}-->
+And create a board item for the fix:
+<!--BEEHAVEN:{"action":"board-add","title":"Fix: description","file":"relative/path.ts","indicator":"bug","status":"backlog"}-->`,
+
+  sprint: `Plan a development sprint for this project. Analyze the codebase and create a prioritized list of tasks:
+1. Critical fixes (bugs, security)
+2. Important features
+3. Refactoring / tech debt
+
+For each task, create a board item:
+<!--BEEHAVEN:{"action":"board-add","title":"Task title","file":"relative/path.ts","indicator":"bug|feature|refactor","status":"backlog"}-->
+Mark files that need attention:
+<!--BEEHAVEN:{"action":"mark","file":"relative/path.ts","indicator":"priority","note":"why this is important"}-->
+Create 8-12 well-scoped tasks.`,
+
+  architecture: `Review this project's architecture. Look for:
+- Design pattern violations
+- Coupling issues
+- Files that are too large or do too much
+- Missing abstractions
+- Inconsistent patterns
+
+Mark files that need refactoring:
+<!--BEEHAVEN:{"action":"mark","file":"relative/path.ts","indicator":"refactor","note":"what should be refactored and why"}-->
+Create board items for architectural improvements:
+<!--BEEHAVEN:{"action":"board-add","title":"Refactor: description","file":"relative/path.ts","indicator":"refactor","status":"backlog"}-->`,
+};
+
+function handleCityPrompt(promptKey) {
+  const prompt = CITY_PROMPTS[promptKey];
+  if (!prompt) return;
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(prompt).then(() => {
+    // Visual feedback
+    const btn = document.querySelector(`.city-prompt-btn[data-prompt="${promptKey}"]`);
+    if (btn) {
+      btn.classList.add('sent');
+      btn.textContent = 'Copied!';
+      setTimeout(() => {
+        btn.classList.remove('sent');
+        const labels = { analyze: 'Analyze Project', bugs: 'Find Bugs', sprint: 'Plan Sprint', architecture: 'Review Architecture' };
+        btn.textContent = labels[promptKey] || promptKey;
+      }, 2000);
+    }
+  }).catch(() => {
+    // Fallback: send directly via terminal
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'user-input',
+        text: prompt,
+        project: activeCityProject,
+      }));
+    }
+  });
 }
 
 // --- Elevator ---
@@ -3760,8 +4805,8 @@ function updateCamera() {
     cameraTarget.y = CANVAS_H / 2 - cameraFollow.drawY * cameraTarget.zoom;
   }
 
-  // --- Edge-of-map panning (mouse near canvas edge) ---
-  if (!cameraFollow && mouseInCanvas && viewMode === 'single') {
+  // --- Edge-of-screen panning (LoL style) ---
+  if (!cameraFollow && mouseInCanvas && !isPanning && viewMode === 'single' && sceneMode === 'office') {
     const rect = app.canvas.getBoundingClientRect();
     const vw = rect.width, vh = rect.height;
     let epx = 0, epy = 0;
@@ -4063,12 +5108,58 @@ function handleState(state) {
   // Update team portrait dock
   renderTeamDock(state.bees);
 
+  // Team panel (after syncBees so localBees/ambientBees are up to date)
+  renderTeamPanel();
+
+  // City state (indicators + board) from server
+  if (state.cityState) {
+    serverCityState = state.cityState;
+    // Apply indicators to active city buildings
+    if (activeCityProject && projectCities.has(activeCityProject)) {
+      const city = projectCities.get(activeCityProject);
+      if (city?.loaded) {
+        const projState = serverCityState[activeCityProject];
+        if (projState?.indicators) {
+          // Clear old indicators
+          for (const bldg of city.buildings.values()) bldg.indicators = [];
+          // Match indicators to buildings
+          for (const ind of projState.indicators) {
+            let matched = city.buildings.get(ind.file);
+            if (!matched) {
+              // Try filename-only fallback
+              const fname = ind.file.split('/').pop();
+              for (const [, b] of city.buildings) {
+                if (b.filename === fname) { matched = b; break; }
+              }
+            }
+            if (matched) {
+              if (!matched.indicators) matched.indicators = [];
+              matched.indicators.push(ind);
+            }
+          }
+          cityDirty = true;
+        }
+        // Update board panel if open
+        if (boardOpen && projState?.board) {
+          renderBoard(projState.board);
+        }
+      }
+    }
+  }
+
   // Event log (filtered by project) — uses session history browser wrapper
   const filteredLog = projectFilter
     ? state.eventLog.filter(e => !e.project || e.project === projectFilter)
     : state.eventLog;
   if (state.eventLog) {
     renderActivityPanel(filteredLog);
+    // Feed events to active city
+    if (activeCityProject && projectCities.has(activeCityProject)) {
+      const city = projectCities.get(activeCityProject);
+      if (city.loaded) {
+        applyCityEvents(city, state.eventLog);
+      }
+    }
   }
 
   // Terminal log from state (persists across reconnects)
@@ -4106,6 +5197,10 @@ function handleEvent(payload) {
 }
 
 function handleSpeech(payload) {
+  // Only narrate speech from the selected chat room (project tab)
+  // If a project filter is active, skip speech from other projects
+  if (projectFilter && payload.project && payload.project !== projectFilter) return;
+
   showSubtitle(payload.text);
 
   if (!voiceEnabled || !payload.audio) return;
@@ -4890,6 +5985,9 @@ function bindUI() {
   // Floating terminal window
   initTerminalWindow();
 
+  // Team panel
+  initTeamPanel();
+
   // Account popover
   document.getElementById('btn-account').addEventListener('click', toggleAccount);
   document.getElementById('btn-account-close').addEventListener('click', toggleAccount);
@@ -4920,6 +6018,54 @@ function bindUI() {
     }
   });
 
+  // City view toggle
+  document.getElementById('btn-city').addEventListener('click', toggleCityView);
+
+  // Board panel
+  document.getElementById('btn-board').addEventListener('click', toggleBoard);
+  document.getElementById('board-close-btn')?.addEventListener('click', toggleBoard);
+  document.getElementById('board-add-btn')?.addEventListener('click', showBoardAddModal);
+  document.getElementById('board-add-cancel')?.addEventListener('click', hideBoardAddModal);
+  document.getElementById('board-add-submit')?.addEventListener('click', submitBoardAdd);
+
+  // Board add modal: indicator selection
+  document.querySelectorAll('.board-indicator-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ind = btn.dataset.indicator;
+      if (boardAddSelectedIndicator === ind) {
+        boardAddSelectedIndicator = null;
+        btn.classList.remove('selected');
+      } else {
+        document.querySelectorAll('.board-indicator-btn').forEach(b => b.classList.remove('selected'));
+        boardAddSelectedIndicator = ind;
+        btn.classList.add('selected');
+      }
+    });
+  });
+
+  // Board add modal: Enter key
+  document.getElementById('board-add-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitBoardAdd();
+    if (e.key === 'Escape') hideBoardAddModal();
+  });
+
+  // City prompt template buttons
+  document.querySelectorAll('.city-prompt-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleCityPrompt(btn.dataset.prompt));
+  });
+
+  // Tooltip: track mouse over canvas for building hover
+  const viewport = document.getElementById('office-viewport');
+  if (viewport) {
+    viewport.addEventListener('mousemove', (e) => {
+      updateCityTooltip(e.clientX, e.clientY);
+    });
+    viewport.addEventListener('mouseleave', () => {
+      hoveredBuilding = null;
+      hideTooltip();
+    });
+  }
+
   // Voice
   document.getElementById('btn-voice').addEventListener('click', () => {
     voiceEnabled = !voiceEnabled;
@@ -4944,6 +6090,8 @@ function bindUI() {
       if (win) win.classList.toggle('hidden');
     }
     if (e.key === 'Escape' && shopOpen) toggleShop();
+    if (e.key === 'Escape' && boardAddModalOpen) hideBoardAddModal();
+    if (e.key === 'Escape' && boardOpen) toggleBoard();
   });
 }
 
@@ -5010,6 +6158,8 @@ function setProjectFilter(project) {
   lastTerminalCount = 0;
   lastEventLogKey = '';
   lastEventLogCount = 0;
+  // Stop narration from previous room when switching tabs
+  stopAllAudio();
   // Update tab active states
   document.querySelectorAll('.project-tab').forEach(t => {
     t.classList.toggle('active', (t.dataset.project || null) === (projectFilter || null));
@@ -5019,6 +6169,396 @@ function setProjectFilter(project) {
   } else {
     exitBuildingView(null);
   }
+  // If in city mode, switch to the selected project's city
+  if (sceneMode === 'city' && project) {
+    activeCityProject = project;
+    loadProjectCity(project);
+    cityDirty = true;
+  }
+}
+
+// --- Team Panel ---
+
+function applyTeamPosition() {
+  const panel = document.getElementById('team-panel');
+  if (!panel) return;
+  for (const pos of TEAM_POSITIONS) panel.classList.remove(pos);
+  panel.classList.add(teamPosition);
+}
+
+function cycleTeamPosition() {
+  const idx = TEAM_POSITIONS.indexOf(teamPosition);
+  teamPosition = TEAM_POSITIONS[(idx + 1) % TEAM_POSITIONS.length];
+  localStorage.setItem(TEAM_POSITION_KEY, teamPosition);
+  applyTeamPosition();
+}
+
+/** Activity color for the status dot */
+function activityColor(activity) {
+  switch (activity) {
+    case 'coding': case 'reading': case 'browsing': return '#4ADE80';
+    case 'running-command': return '#F97316';
+    case 'thinking': return '#6CB0E8';
+    case 'presenting': case 'chatting': return '#D5A0E5';
+    case 'celebrating': return '#E8B84D';
+    case 'drinking-coffee': return '#A87A50';
+    case 'walking': case 'arriving': return '#7DBDD5';
+    default: return '#555';
+  }
+}
+
+/** Activity + room label for status text */
+function beeStatusText(bee) {
+  const roomObj = ROOMS.find(r => r.id === bee.room);
+  const roomLabel = roomObj ? roomObj.label : bee.room || '';
+  const act = bee.activity || 'idle';
+  const actLabel = act === 'idle' ? 'chilling' : act.replace(/-/g, ' ');
+  return `${actLabel} · ${roomLabel}`;
+}
+
+/** Draw a mini front-facing bee onto a 36×36 canvas */
+function drawMiniBee(canvas, bee) {
+  const ctx = canvas.getContext('2d');
+  const w = 36, h = 36;
+  canvas.width = w * 2; // HiDPI
+  canvas.height = h * 2;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(2, 2);
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2 + 2;
+  const color = typeof bee.color === 'string' ? bee.color : '#' + (bee.color || 0xF59E0B).toString(16).padStart(6, '0');
+
+  // Wings (translucent)
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#bfdbfe';
+  ctx.beginPath();
+  ctx.ellipse(cx - 10, cy - 4, 7, 4, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + 10, cy - 4, 7, 4, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Body
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 8, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Stripes
+  ctx.fillStyle = 'rgba(60, 40, 20, 0.35)';
+  for (const sy of [-3, 3, 7]) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + sy, 7.5, 1.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head
+  ctx.fillStyle = '#fef9c3';
+  ctx.beginPath();
+  ctx.arc(cx, cy - 12, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(cx - 3, cy - 13, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 3, cy - 13, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye highlights
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - 2.5, cy - 13.5, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 3.5, cy - 13.5, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Antennae
+  ctx.strokeStyle = '#5C4A32';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - 3, cy - 18);
+  ctx.quadraticCurveTo(cx - 7, cy - 25, cx - 5, cy - 26);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + 3, cy - 18);
+  ctx.quadraticCurveTo(cx + 7, cy - 25, cx + 5, cy - 26);
+  ctx.stroke();
+
+  // Antenna tips
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx - 5, cy - 26, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 5, cy - 26, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Activity dot (bottom-right)
+  const dotColor = activityColor(bee.activity);
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(w - 5, h - 5, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+/** Get avatar cache key for a bee */
+function avatarKey(bee) {
+  return `${bee.color}:${bee._shopAccessory || bee.accessory || ''}:${bee.activity}`;
+}
+
+/** Render the team panel from current bee state */
+function renderTeamPanel() {
+  const list = document.getElementById('team-list');
+  const countEl = document.getElementById('team-count');
+  if (!list) return;
+
+  // Collect all bees in display order
+  const allBees = [];
+  if (playerBee) allBees.push(playerBee);
+  if (localBees['queen']) allBees.push(localBees['queen']);
+  // Workers (server bees except queen and recruiter)
+  for (const [id, bee] of Object.entries(localBees)) {
+    if (id === 'queen' || id === 'recruiter') continue;
+    allBees.push(bee);
+  }
+  if (localBees['recruiter']) allBees.push(localBees['recruiter']);
+  // Ambient bees
+  for (const bee of Object.values(ambientBees)) {
+    allBees.push(bee);
+  }
+
+  // Fingerprint: ids + activities + rooms + follow state
+  const fp = allBees.map(b => `${b.id}:${b.activity}:${b.room}:${b.color}`).join('|')
+    + ':' + (cameraFollow?.id || '');
+  if (fp === teamPanelFingerprint) return;
+  teamPanelFingerprint = fp;
+
+  if (countEl) countEl.textContent = allBees.length;
+
+  // Update or rebuild
+  const existing = list.querySelectorAll('.team-bee-row');
+  const existingIds = new Set();
+  existing.forEach(el => existingIds.add(el.dataset.beeId));
+
+  const newIds = new Set(allBees.map(b => b.id));
+
+  // Remove departed bees
+  existing.forEach(el => {
+    if (!newIds.has(el.dataset.beeId)) el.remove();
+  });
+
+  for (const bee of allBees) {
+    let row = list.querySelector(`.team-bee-row[data-bee-id="${bee.id}"]`);
+
+    if (!row) {
+      // Create new row
+      row = document.createElement('div');
+      row.className = 'team-bee-row';
+      row.dataset.beeId = bee.id;
+
+      // Card
+      const card = document.createElement('div');
+      card.className = 'team-bee';
+      card.dataset.beeId = bee.id;
+
+      // Avatar
+      const avatar = document.createElement('canvas');
+      avatar.className = 'team-bee-avatar';
+      card.appendChild(avatar);
+
+      // Info
+      const info = document.createElement('div');
+      info.className = 'team-bee-info';
+      const name = document.createElement('span');
+      name.className = 'team-bee-name';
+      name.textContent = bee.name || bee.id;
+      const status = document.createElement('span');
+      status.className = 'team-bee-status';
+      status.textContent = beeStatusText(bee);
+      info.appendChild(name);
+      info.appendChild(status);
+      card.appendChild(info);
+
+      // Actions
+      const actions = document.createElement('div');
+      actions.className = 'team-bee-actions';
+
+      const followBtn = document.createElement('button');
+      followBtn.className = 'team-btn team-btn-follow';
+      followBtn.title = 'Follow';
+      followBtn.textContent = '\u{1F441}';
+      followBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const target = allBees.find(b => b.id === bee.id)
+          || Object.values(localBees).find(b => b.id === bee.id)
+          || Object.values(ambientBees).find(b => b.id === bee.id)
+          || (playerBee?.id === bee.id ? playerBee : null);
+        if (cameraFollow?.id === bee.id) {
+          cameraFollow = null;
+        } else {
+          cameraFollow = target || null;
+        }
+        teamPanelFingerprint = ''; // force re-render
+        renderTeamPanel();
+      });
+      actions.appendChild(followBtn);
+
+      // Settings button (only for queen and player)
+      if (bee.id === 'queen' || bee.id === 'player') {
+        const settingsBtn = document.createElement('button');
+        settingsBtn.className = 'team-btn team-btn-settings';
+        settingsBtn.title = 'Settings';
+        settingsBtn.textContent = '\u2699';
+        settingsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const settingsPanel = row.querySelector('.team-bee-settings');
+          if (settingsPanel) {
+            settingsPanel.classList.toggle('open');
+            renderBeeSettings(settingsPanel, bee.id);
+          }
+        });
+        actions.appendChild(settingsBtn);
+      }
+
+      card.appendChild(actions);
+
+      // Click card to follow
+      card.addEventListener('click', () => {
+        const target = Object.values(localBees).find(b => b.id === bee.id)
+          || Object.values(ambientBees).find(b => b.id === bee.id)
+          || (playerBee?.id === bee.id ? playerBee : null);
+        if (cameraFollow?.id === bee.id) {
+          cameraFollow = null;
+        } else {
+          cameraFollow = target || null;
+        }
+        teamPanelFingerprint = '';
+        renderTeamPanel();
+      });
+
+      row.appendChild(card);
+
+      // Settings panel (hidden by default)
+      if (bee.id === 'queen' || bee.id === 'player') {
+        const settings = document.createElement('div');
+        settings.className = 'team-bee-settings';
+        row.appendChild(settings);
+      }
+
+      list.appendChild(row);
+    }
+
+    // Update card state
+    const card = row.querySelector('.team-bee');
+    card.classList.toggle('following', cameraFollow?.id === bee.id);
+
+    // Update follow button
+    const followBtn = card.querySelector('.team-btn-follow');
+    if (followBtn) followBtn.classList.toggle('active', cameraFollow?.id === bee.id);
+
+    // Update status text
+    const statusEl = card.querySelector('.team-bee-status');
+    if (statusEl) statusEl.textContent = beeStatusText(bee);
+
+    // Update name
+    const nameEl = card.querySelector('.team-bee-name');
+    if (nameEl) nameEl.textContent = bee.name || bee.id;
+
+    // Update avatar (cached)
+    const ak = avatarKey(bee);
+    const avatar = card.querySelector('.team-bee-avatar');
+    if (avatar && (!avatarCache[bee.id] || avatarCache[bee.id].key !== ak)) {
+      drawMiniBee(avatar, bee);
+      avatarCache[bee.id] = { key: ak };
+    }
+  }
+}
+
+/** Render inline settings for a bee (skins + accessories from shop) */
+function renderBeeSettings(container, beeId) {
+  container.innerHTML = '';
+  const shop = officeState?.shop;
+  if (!shop) return;
+
+  const items = shop.items || [];
+  const ownedSkins = shop.ownedSkins || ['default'];
+  const ownedAccessories = shop.ownedAccessories || [];
+  const skins = items.filter(i => i.type === 'skin' && ownedSkins.includes(i.id));
+  const accessories = items.filter(i => i.type === 'accessory' && ownedAccessories.includes(i.id));
+
+  // Skins section
+  if (skins.length > 0) {
+    const label = document.createElement('div');
+    label.className = 'team-settings-label';
+    label.textContent = 'Skins';
+    container.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'team-settings-row';
+    for (const skin of skins) {
+      const swatch = document.createElement('div');
+      swatch.className = 'team-swatch' + (shop.equippedSkin === skin.id ? ' equipped' : '');
+      swatch.style.background = skin.color;
+      swatch.title = skin.name;
+      swatch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'shop-equip', itemId: skin.id }));
+        }
+      });
+      row.appendChild(swatch);
+    }
+    container.appendChild(row);
+  }
+
+  // Accessories section
+  if (accessories.length > 0) {
+    const label = document.createElement('div');
+    label.className = 'team-settings-label';
+    label.textContent = 'Accessories';
+    container.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'team-settings-row';
+    for (const acc of accessories) {
+      const btn = document.createElement('button');
+      btn.className = 'team-accessory-btn' + (shop.equippedAccessory === acc.id ? ' equipped' : '');
+      btn.textContent = acc.name;
+      btn.title = acc.description;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'shop-equip', itemId: acc.id }));
+        }
+      });
+      row.appendChild(btn);
+    }
+    container.appendChild(row);
+  }
+
+  if (skins.length === 0 && accessories.length === 0) {
+    const hint = document.createElement('div');
+    hint.className = 'team-settings-label';
+    hint.textContent = 'Buy items in the shop first';
+    container.appendChild(hint);
+  }
+}
+
+function initTeamPanel() {
+  applyTeamPosition();
+  const posBtn = document.getElementById('btn-team-position');
+  if (posBtn) posBtn.addEventListener('click', cycleTeamPosition);
 }
 
 function escapeHtml(str) {

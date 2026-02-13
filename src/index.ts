@@ -13,7 +13,7 @@ import { ensureHooks } from './setup-hooks.js';
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { OnboardingConfig, ShopPersistData } from './types.js';
+import type { BeeHavenCommand, OnboardingConfig, ShopPersistData } from './types.js';
 
 const CONFIG_DIR = join(homedir(), '.beehaven');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -56,6 +56,34 @@ function isDuplicate(event: { session_id: string; hook_event_name: string; tool_
     for (const k of keep) recentEventKeys.add(k);
   }
   return false;
+}
+
+/** Parse and strip BEEHAVEN commands from Claude's text output */
+const BEEHAVEN_RE = /<!--BEEHAVEN:(.*?)-->/g;
+
+function extractBeeHavenCommands(text: string, project: string | undefined, office: Office): string {
+  let match: RegExpExecArray | null;
+  const commands: BeeHavenCommand[] = [];
+  while ((match = BEEHAVEN_RE.exec(text)) !== null) {
+    try {
+      const cmd = JSON.parse(match[1]) as BeeHavenCommand;
+      if (cmd.action) commands.push(cmd);
+    } catch {
+      console.warn('[beehaven] Failed to parse command:', match[1]);
+    }
+  }
+  // Reset regex lastIndex for next call
+  BEEHAVEN_RE.lastIndex = 0;
+
+  if (commands.length > 0 && project) {
+    console.log(`[beehaven] Processing ${commands.length} city commands for ${project}`);
+    for (const cmd of commands) {
+      office.processCityCommand(project, cmd);
+    }
+  }
+
+  // Strip BEEHAVEN tags from display text
+  return text.replace(BEEHAVEN_RE, '').trim();
 }
 
 /**
@@ -162,8 +190,11 @@ async function flushNewTranscriptText(
           } else if (typeof content === 'string' && content.trim()) {
             texts = [content.trim()];
           }
-          for (const text of texts) {
+          for (let text of texts) {
             if (text.length > 0) {
+              // Extract and process BEEHAVEN commands, strip tags from display
+              text = extractBeeHavenCommands(text, tracker.project, office);
+              if (!text) continue; // Text was entirely commands
               const displayText = text.length > 5000 ? text.slice(0, 5000) + '\n...' : text;
               console.log(`[transcript] Text (${text.length} chars): ${text.slice(0, 80)}...`);
               office.addTerminalEntry({

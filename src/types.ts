@@ -282,7 +282,7 @@ export interface DeskState {
 }
 
 // ============================================================================
-// City State Types (used by project sync)
+// City Command System Types
 // ============================================================================
 
 /** Indicator types that can be placed on city buildings */
@@ -312,6 +312,20 @@ export interface BoardItem {
 export interface CityProjectState {
   indicators: CityIndicator[];
   board: BoardItem[];
+}
+
+/** Actions that can be sent via BEEHAVEN commands */
+export type BeeHavenAction = 'mark' | 'unmark' | 'board-add' | 'board-move' | 'board-remove' | 'analyze';
+
+/** A structured command from Claude to the city */
+export interface BeeHavenCommand {
+  action: BeeHavenAction;
+  file?: string;
+  indicator?: IndicatorType;
+  note?: string;
+  title?: string;
+  status?: BoardItem['status'];
+  itemId?: string;
 }
 
 // ============================================================================

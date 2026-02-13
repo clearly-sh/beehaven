@@ -70,6 +70,8 @@
         </div>
       </div>
       <div class="hud-right">
+        <button id="btn-board" class="hud-btn" title="Project Board">&#x1F4CB;</button>
+        <button id="btn-city" class="hud-btn" title="City View">&#x1F3D9;</button>
         <button id="btn-voice" class="hud-btn" title="Toggle voice narration">&#x1F50A;</button>
         <button id="btn-mic" class="hud-btn" title="Voice input">&#x1F399;</button>
         <button id="btn-shop" class="hud-btn shop-btn" title="Bee Shop">&#x1F36F; <span id="shop-honey-badge" class="hud-badge">0</span></button>
@@ -162,6 +164,64 @@
       <input type="text" id="terminal-input" class="term-input" placeholder="Send to Claude..." autocomplete="off" spellcheck="false">
     </div>
   </div>
+
+  <div id="team-panel" class="team-panel">
+    <div class="team-panel-header">
+      <span class="team-panel-title">Team</span>
+      <span id="team-count" class="team-count">0</span>
+      <button id="btn-team-position" class="term-position-btn" title="Reposition">&#x2725;</button>
+    </div>
+    <div id="team-list" class="team-list"></div>
+  </div>
+
+  <div id="board-panel" class="board-panel hidden">
+    <div class="board-header">
+      <span class="board-title">Project Board</span>
+      <button id="board-add-btn" class="board-action-btn">+ Add</button>
+      <button id="board-close-btn" class="board-close-btn">&times;</button>
+    </div>
+    <div class="board-columns">
+      <div class="board-col" data-status="backlog">
+        <div class="board-col-header">Backlog</div>
+        <div class="board-col-items" id="board-backlog"></div>
+      </div>
+      <div class="board-col" data-status="in-progress">
+        <div class="board-col-header">In Progress</div>
+        <div class="board-col-items" id="board-in-progress"></div>
+      </div>
+      <div class="board-col" data-status="done">
+        <div class="board-col-header">Done</div>
+        <div class="board-col-items" id="board-done"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="board-add-modal" class="board-add-modal hidden">
+    <div class="board-add-form">
+      <div class="board-add-title">Add Board Item</div>
+      <input type="text" id="board-add-input" class="board-add-input" placeholder="Task title..." autocomplete="off">
+      <input type="text" id="board-add-file" class="board-add-input" placeholder="Linked file (optional)..." autocomplete="off">
+      <div class="board-add-indicators">
+        <button class="board-indicator-btn" data-indicator="bug" title="Bug">!</button>
+        <button class="board-indicator-btn" data-indicator="feature" title="Feature">+</button>
+        <button class="board-indicator-btn" data-indicator="refactor" title="Refactor">~</button>
+        <button class="board-indicator-btn" data-indicator="priority" title="Priority">!!</button>
+      </div>
+      <div class="board-add-actions">
+        <button id="board-add-cancel" class="board-btn-secondary">Cancel</button>
+        <button id="board-add-submit" class="board-btn-primary">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="city-prompts" class="city-prompts hidden">
+    <button class="city-prompt-btn" data-prompt="analyze">Analyze Project</button>
+    <button class="city-prompt-btn" data-prompt="bugs">Find Bugs</button>
+    <button class="city-prompt-btn" data-prompt="sprint">Plan Sprint</button>
+    <button class="city-prompt-btn" data-prompt="architecture">Review Architecture</button>
+  </div>
+
+  <div id="city-tooltip" class="city-tooltip hidden"></div>
 
   <div id="speech-bar" class="speech-bar hidden">
     <span id="speech-text"></span>

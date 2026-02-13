@@ -11,10 +11,11 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
-import type { OfficeState, WSMessage, OnboardingConfig, HiredBeeType } from './types.js';
+import type { BeeHavenCommand, OfficeState, WSMessage, OnboardingConfig, HiredBeeType } from './types.js';
 import { Voice } from './voice.js';
 import { Relay, CLEARLY_RELAY_URL } from './relay.js';
 import { Office } from './office.js';
+import { scanProjectFiles } from './file-tree.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -420,6 +421,64 @@ export class Server {
       res.json({ session });
     });
 
+    // Project file tree for city view
+    this.app.get('/api/project-files/:project', (req, res) => {
+      const project = req.params.project;
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      const rootPath = this.office.getProjectPath(project);
+      if (!rootPath) {
+        res.status(404).json({ error: `Unknown project: ${project}` });
+        return;
+      }
+      const tree = scanProjectFiles(project, rootPath);
+      if (!tree) {
+        res.status(404).json({ error: `Project directory not found: ${rootPath}` });
+        return;
+      }
+      res.json(tree);
+    });
+
+    // GET /api/board/:project — Board items for a project
+    this.app.get('/api/board/:project', (req, res) => {
+      const project = req.params.project;
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      const state = this.office.getCityState(project);
+      res.json({ items: state.board });
+    });
+
+    // POST /api/city-command — Process a city command (from UI)
+    this.app.post('/api/city-command', (req, res) => {
+      const { project, command } = req.body as { project?: string; command?: BeeHavenCommand };
+      if (!project || !command || !command.action) {
+        res.status(400).json({ error: 'Missing project or command' });
+        return;
+      }
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      this.office.processCityCommand(project, command);
+      this.broadcastState(this.office.getState());
+      res.json({ ok: true });
+    });
+
+    // GET /api/city-state/:project — Full city state (indicators + board)
+    this.app.get('/api/city-state/:project', (req, res) => {
+      const project = req.params.project;
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+      const state = this.office.getCityState(project);
+      res.json(state);
+    });
+
     // WebSocket connections
     this.wss.on('connection', (ws) => {
       this.clients.add(ws);
@@ -517,7 +576,11 @@ export class Server {
 
   /** Broadcast office state to all connected clients */
   broadcastState(state: OfficeState) {
+    // Attach city state + sync status alongside office state
     const payload: Record<string, unknown> = { ...state };
+    if (this.office) {
+      payload.cityState = this.office.getAllCityState();
+    }
     if (this.relay?.isConnected()) {
       payload.syncStatus = this.relay.getSyncStatus();
     }
