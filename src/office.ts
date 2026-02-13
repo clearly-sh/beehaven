@@ -19,6 +19,7 @@ import type {
   RoomDef,
   SessionPersistData,
   ShopPersistData,
+  StoryBeehavenState,
   TerminalEntry,
 } from './types.js';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
@@ -1148,6 +1149,84 @@ export class Office {
 
     this.log('TeamUpdate', `${bee.name} updated`, '⚙️');
     return null;
+  }
+
+  // --- Story Mode Integration ---
+
+  /** Default mapping of story locations to office rooms */
+  private static STORY_LOCATION_TO_ROOM: Record<string, Room> = {
+    'The Command Center': 'meeting-room',
+    'The Archives': 'library',
+    'The Workshop': 'studio',
+    'The Observatory': 'web-booth',
+    'The Engine Room': 'server-room',
+    'The Commons': 'water-cooler',
+    'The Café': 'coffee',
+    'The Gateway': 'lobby',
+    'The Focus Chamber': 'phone-b',
+  };
+
+  /** Apply a story world mapping — assigns story characters to bees and locations to rooms */
+  updateStoryMapping(mapping: StoryBeehavenState): void {
+    this.state.storyMapping = mapping;
+
+    // Assign story characters to existing bees
+    for (const [character, beeId] of Object.entries(mapping.characterToBee)) {
+      const bee = this.state.bees.find(b => b.id === beeId);
+      if (bee) {
+        bee.storyCharacter = character;
+        // Look up technical mapping from characterToBee key
+        bee.storyTechnicalMapping = character;
+      }
+    }
+
+    // If there are active characters in the scene, move them to their story locations
+    if (mapping.activeCharacters?.length) {
+      for (const charName of mapping.activeCharacters) {
+        const beeId = mapping.characterToBee[charName];
+        if (!beeId) continue;
+        const bee = this.state.bees.find(b => b.id === beeId);
+        if (!bee) continue;
+
+        // Find which room this character should be in based on story location mapping
+        for (const [storyLoc, room] of Object.entries(mapping.locationToRoom)) {
+          // Active characters go to their mapped room
+          const pos = roomCenter(room);
+          bee.targetX = pos.x;
+          bee.targetY = pos.y;
+          bee.room = room;
+          break; // Use first mapping for now
+        }
+      }
+    }
+
+    // Show narration as terminal entry
+    if (mapping.activeNarration) {
+      this.addTerminalEntry({
+        event: 'StoryNarration',
+        content: mapping.activeNarration,
+        timestamp: new Date().toISOString(),
+        role: 'claude',
+      });
+    }
+
+    this.log('StoryMode', `${mapping.worldTitle} — Ch.${mapping.currentChapter}`, '📖');
+  }
+
+  /** Clear story mapping (exit story mode) */
+  clearStoryMapping(): void {
+    // Remove story assignments from bees
+    for (const bee of this.state.bees) {
+      bee.storyCharacter = undefined;
+      bee.storyTechnicalMapping = undefined;
+    }
+    this.state.storyMapping = undefined;
+    this.log('StoryMode', 'Story mode deactivated', '📖');
+  }
+
+  /** Get the default room mapping for a story location name */
+  static getStoryLocationRoom(locationName: string): Room {
+    return Office.STORY_LOCATION_TO_ROOM[locationName] || 'water-cooler';
   }
 
   // --- Session Persistence ---
