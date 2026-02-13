@@ -6,6 +6,7 @@
 import type {
   BeeCharacter,
   BeeActivity,
+  BeeHavenCommand,
   CityProjectState,
   ClaudeEvent,
   EventLogEntry,
@@ -355,9 +356,12 @@ export class Office {
           if (projectName && !this.deletedProjects.has(projectName)) {
             this.knownProjects.add(projectName);
           }
-          // Decode directory name to absolute path for file tree scanning
+          // Decode directory name to absolute path as fallback for file tree scanning
+          // Format: "-Users-gemini-projects-clearly-beehaven" → "/Users/gemini/projects/clearly/beehaven"
           if (projectName && !this.projectPaths.has(projectName)) {
             const absPath = '/' + d.name.slice(1);
+            // Try progressive path resolution to handle hyphens in directory names
+            // Walk the filesystem to find the actual path
             const resolved = this.resolveEncodedPath(absPath);
             if (resolved && existsSync(resolved)) {
               this.projectPaths.set(projectName, resolved);
@@ -369,19 +373,25 @@ export class Office {
 
     console.log(`[office] Known projects (from history): ${Array.from(this.knownProjects).join(', ') || 'none'}`);
     console.log(`[office] Project paths: ${Array.from(this.projectPaths.entries()).map(([k, v]) => `${k}→${v}`).join(', ') || 'none'}`);
+    // Build initial project list from known projects with paths
     this.refreshActiveProjects();
   }
 
   /** Resolve an encoded Claude projects path by walking the filesystem */
   private resolveEncodedPath(encoded: string): string | null {
-    const parts = encoded.split('/').filter(Boolean);
+    // The encoded path has / replaced with - but directory names can contain -
+    // Strategy: walk from root, trying each segment boundary
+    const parts = encoded.split('/').filter(Boolean); // e.g. ["Users-gemini-projects-clearly-beehaven"]
     if (parts.length !== 1) return null;
 
     const segments = parts[0].split('-');
+    // Try to build a valid path by joining segments with / or -
+    // Start with "/" and greedily match existing directories
     let current = '';
     let i = 0;
     while (i < segments.length) {
       let found = false;
+      // Try longest possible segment first (handles hyphenated dir names)
       for (let len = segments.length - i; len >= 1; len--) {
         const candidate = segments.slice(i, i + len).join('-');
         const testPath = current + '/' + candidate;
@@ -395,6 +405,7 @@ export class Office {
         } catch { /* skip */ }
       }
       if (!found) {
+        // Try just the single segment
         current += '/' + segments[i];
         i++;
       }
@@ -846,18 +857,97 @@ export class Office {
     return s;
   }
 
+  /** Process a BEEHAVEN command from Claude's output */
+  processCityCommand(project: string, cmd: BeeHavenCommand): void {
+    const state = this.getCityState(project);
+    const now = Date.now();
+
+    switch (cmd.action) {
+      case 'mark': {
+        if (!cmd.file || !cmd.indicator) break;
+        // Remove existing indicator of same type on same file
+        state.indicators = state.indicators.filter(
+          i => !(i.file === cmd.file && i.type === cmd.indicator)
+        );
+        state.indicators.push({
+          type: cmd.indicator,
+          note: cmd.note || '',
+          file: cmd.file,
+          addedAt: now,
+        });
+        break;
+      }
+      case 'unmark': {
+        if (!cmd.file) break;
+        if (cmd.indicator) {
+          state.indicators = state.indicators.filter(
+            i => !(i.file === cmd.file && i.type === cmd.indicator)
+          );
+        } else {
+          state.indicators = state.indicators.filter(i => i.file !== cmd.file);
+        }
+        break;
+      }
+      case 'board-add': {
+        if (!cmd.title) break;
+        const id = `item-${now}-${Math.random().toString(36).slice(2, 8)}`;
+        state.board.push({
+          id,
+          title: cmd.title,
+          status: cmd.status || 'backlog',
+          file: cmd.file,
+          indicator: cmd.indicator,
+          note: cmd.note,
+          createdAt: now,
+          updatedAt: now,
+        });
+        break;
+      }
+      case 'board-move': {
+        if (!cmd.itemId || !cmd.status) break;
+        const item = state.board.find(b => b.id === cmd.itemId);
+        if (item) {
+          item.status = cmd.status;
+          item.updatedAt = now;
+        }
+        break;
+      }
+      case 'board-remove': {
+        if (!cmd.itemId) break;
+        state.board = state.board.filter(b => b.id !== cmd.itemId);
+        break;
+      }
+      case 'analyze': {
+        // No-op on server — triggers client-side highlight sweep
+        break;
+      }
+    }
+  }
+
+  /** Get all city states keyed by project for WS broadcast */
+  getAllCityState(): Record<string, CityProjectState> {
+    const result: Record<string, CityProjectState> = {};
+    for (const [project, state] of this.cityState) {
+      result[project] = state;
+    }
+    return result;
+  }
+
   /** Assemble full project context for Clearly cloud sync */
   getProjectSyncData(project: string): ProjectSyncData | null {
     const rootPath = this.projectPaths.get(project);
     if (!rootPath) return null;
 
+    // Scan file tree (uses 30s cache internally)
     const tree = scanProjectFiles(project, rootPath);
     const fileTree = tree
       ? { files: tree.files, directories: tree.directories, fileCount: tree.files.length }
       : { files: [], directories: [], fileCount: 0 };
 
+    // Get city state (indicators + board)
     const cityState = this.getCityState(project);
 
+    // Filter terminal log to this project's entries (last 200)
     const allEntries = this.state.terminalLog || [];
     const projectEntries = allEntries
       .filter(e => e.project === project)
@@ -907,9 +997,11 @@ export class Office {
   /** Rebuild state.projects from active sessions + known projects with paths */
   private refreshActiveProjects() {
     const all = new Set<string>();
+    // Active sessions (highest priority — currently running)
     for (const proj of this.activeSessions.values()) {
       if (!this.deletedProjects.has(proj)) all.add(proj);
     }
+    // Known projects that have resolved filesystem paths (from ~/.claude/projects/ scan)
     for (const proj of this.knownProjects) {
       if (!this.deletedProjects.has(proj) && this.projectPaths.has(proj)) {
         all.add(proj);
