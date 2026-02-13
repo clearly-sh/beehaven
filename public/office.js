@@ -116,13 +116,16 @@ const FURNITURE_COLLIDERS = [
   { x: 80,  y: 415, w: 120, h: 20 },    // reception desk
 ];
 
-// Local ambient bees (rendered client-side alongside backend bees)
-const AMBIENT_BEES = [
-  { id: 'omni-artist',  name: 'OmniArtist',   homeRoom: 'studio',       color: 0x8B5CF6, accessory: 'beret' },
-  { id: 'omni-manager', name: 'OmniManager',  homeRoom: 'meeting-room', color: 0x3B82F6, accessory: 'glasses' },
-  { id: 'coder-1',      name: 'DevBee',       homeRoom: 'studio',       color: 0x22C55E, accessory: 'coder' },
-  { id: 'coder-2',      name: 'StackBee',     homeRoom: 'library',      color: 0x06B6D4, accessory: 'coder' },
-  { id: 'coder-3',      name: 'ByteBee',      homeRoom: 'studio',       color: 0xF97316, accessory: 'coder' },
+// Ambient bees removed — hired bees come from backend state now
+const AMBIENT_BEES = [];
+
+// --- Recruiter Menu Config ---
+const HIRE_OPTIONS = [
+  { type: 'developer',  label: 'Developer',  icon: '\uD83D\uDC69\u200D\uD83D\uDCBB', cost: 50 },
+  { type: 'designer',   label: 'Designer',   icon: '\uD83C\uDFA8', cost: 75 },
+  { type: 'researcher', label: 'Researcher', icon: '\uD83D\uDD2C', cost: 60 },
+  { type: 'devops',     label: 'DevOps',     icon: '\u26A1',       cost: 80 },
+  { type: 'manager',    label: 'Manager',    icon: '\uD83D\uDCCA', cost: 100 },
 ];
 
 // --- State ---
@@ -144,6 +147,9 @@ let lastEventLogKey = '';  // fingerprint to avoid re-rendering unchanged event 
 let lastShopKey = '';      // fingerprint for shop panel
 let lastHoney = 0;         // track honey for earning animation
 let lastQueenZone = 'upper'; // track queen zone for elevator
+let officeLevel = 1;
+let unlockedRooms = ['lobby', 'studio', 'meeting-room', 'library', 'coffee', 'server-room', 'water-cooler', 'web-booth', 'phone-b'];
+let recruiterMenuOpen = false;
 
 // --- Multi-Office Building View State ---
 let viewMode = 'single'; // 'single' | 'building'
@@ -688,7 +694,7 @@ async function init() {
   drawRooms();
   drawFurniture();
   createElevator();
-  initAmbientBees();
+  // Ambient bees removed — hired bees come from backend state via syncBees()
   initPlayerBee();
   initVisualEffects();
   initDoors();
@@ -703,6 +709,7 @@ async function init() {
     updateVisualEffects();
     updateDoors();
     updateBuildingTransition();
+    if (frame % 10 === 0) updateTeamIcons(); // Update role icons every 10 frames
   });
 
   // --- Camera input handlers ---
@@ -721,68 +728,12 @@ async function init() {
       cameraTarget.x = mouse.x - wx * newZoom;
       cameraTarget.y = mouse.y - wy * newZoom;
     } else {
-      // Two-finger scroll = pan
+      // Two-finger trackpad scroll = pan
       cameraTarget.x -= e.deltaX * 0.3;
       cameraTarget.y -= e.deltaY * 0.3;
-      cameraFollow = null; // scroll pan breaks follow
+      cameraFollow = null;
     }
   }, { passive: false });
-
-  app.canvas.addEventListener('pointerdown', (e) => {
-    if (viewMode === 'building') return;
-    pointers.set(e.pointerId, clientToCanvas(e));
-    if (pointers.size === 1) {
-      isPanning = true;
-      panLast = clientToCanvas(e);
-      app.canvas.setPointerCapture(e.pointerId);
-      app.canvas.style.cursor = 'grabbing';
-    }
-    if (pointers.size === 2) {
-      const pts = [...pointers.values()];
-      lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-    }
-  });
-
-  app.canvas.addEventListener('pointermove', (e) => {
-    if (viewMode === 'building') return;
-    const pos = clientToCanvas(e);
-    pointers.set(e.pointerId, pos);
-    if (pointers.size === 2) {
-      const pts = [...pointers.values()];
-      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      if (lastPinchDist > 0) {
-        const raw = dist / lastPinchDist;
-        const factor = 1 + (raw - 1) * 2.5;
-        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-        const newZoom = clamp(cameraTarget.zoom * factor, ZOOM_MIN, ZOOM_MAX);
-        const wx = (mid.x - camera.x) / camera.zoom;
-        const wy = (mid.y - camera.y) / camera.zoom;
-        cameraTarget.zoom = newZoom;
-        cameraTarget.x = mid.x - wx * newZoom;
-        cameraTarget.y = mid.y - wy * newZoom;
-      }
-      lastPinchDist = dist;
-      isPanning = false;
-      return;
-    }
-    if (isPanning) {
-      cameraTarget.x += pos.x - panLast.x;
-      cameraTarget.y += pos.y - panLast.y;
-      panLast = pos;
-      cameraFollow = null; // manual pan breaks follow
-    }
-  });
-
-  const endPointer = (e) => {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) lastPinchDist = 0;
-    if (pointers.size === 0) {
-      isPanning = false;
-      app.canvas.style.cursor = 'grab';
-    }
-  };
-  window.addEventListener('pointerup', endPointer);
-  window.addEventListener('pointercancel', endPointer);
 
   app.canvas.addEventListener('dblclick', () => {
     if (viewMode === 'building') return;
@@ -808,7 +759,7 @@ async function init() {
       return;
     }
 
-    // Click-to-follow bee
+    // Click-to-follow bee (or open recruiter menu)
     const canvasPos = clientToCanvas(e);
     const worldPos = canvasToWorld(canvasPos.x, canvasPos.y);
     let closest = null, closestDist = 40;
@@ -817,17 +768,24 @@ async function init() {
     const allBees = [
       ...(playerBee ? [playerBee] : []),
       ...Object.values(localBees),
-      ...Object.values(ambientBees),
     ];
     for (const bee of allBees) {
       if (!bee.gfx) continue;
       const d = Math.hypot(bee.drawX - worldPos.x, bee.drawY - worldPos.y);
       if (d < closestDist) { closestDist = d; closest = bee; }
     }
+
+    // If clicked recruiter, open hire menu
+    if (closest && (closest.role === 'recruiter' || closest.id === 'recruiter')) {
+      openRecruiterMenu(closest);
+      cameraFollow = closest;
+      return;
+    }
+
     cameraFollow = closest; // null if no bee nearby = free cam
   });
 
-  // --- Mouse tracking for edge panning ---
+  // --- Mouse tracking for edge-of-map panning ---
   app.canvas.addEventListener('mousemove', (e) => {
     const rect = app.canvas.getBoundingClientRect();
     mouseViewX = e.clientX - rect.left;
@@ -889,70 +847,101 @@ for (const d of DOORS) {
 
 // --- Furniture Interaction Points ---
 // Specific coordinates where bees sit/stand at furniture
+// Interaction points tagged with `act` — what activity a bee does here.
+// Multiple points per room lets different bees (or the same bee on different tools) use different spots.
 const INTERACTION_POINTS = {
   'library': [
-    // Chair positions at reading desks (dx+60, dy+70 from desk origin)
-    { x: 340, y: 272, type: 'chair', facing: 'up' },   // desk 1 chair (desk at 280,200)
-    { x: 340, y: 372, type: 'chair', facing: 'up' },   // desk 2 chair (desk at 280,300)
-    // Standing in front of bookshelves (below shelf bottom edge at y:175)
-    { x: 295, y: 182, type: 'stand', facing: 'up' },   // browsing bookshelf 1
-    { x: 405, y: 182, type: 'stand', facing: 'up' },   // browsing bookshelf 2
-    // Armchair (center of armchair at 462,286 + offset)
-    { x: 490, y: 314, type: 'chair', facing: 'left' },  // armchair
+    // Reading desks — sit at desk with lamp, read files on monitor
+    { x: 340, y: 272, type: 'chair', facing: 'up', act: 'reading' },   // desk 1 chair
+    { x: 340, y: 372, type: 'chair', facing: 'up', act: 'reading' },   // desk 2 chair
+    // Bookshelves — stand and search/grep through code
+    { x: 295, y: 182, type: 'stand', facing: 'up', act: 'searching' }, // browsing bookshelf 1
+    { x: 405, y: 182, type: 'stand', facing: 'up', act: 'searching' }, // browsing bookshelf 2
+    // Armchair — casual reading / reviewing
+    { x: 490, y: 314, type: 'chair', facing: 'left', act: 'reading' }, // armchair
+    // Standing between shelves — deep searching
+    { x: 350, y: 130, type: 'stand', facing: 'up', act: 'searching' }, // between shelves
+    // Near side table — reading with reference books
+    { x: 470, y: 260, type: 'stand', facing: 'left', act: 'reading' },
   ],
   'studio': [
-    // Chair positions at workstation desks (x+65, y+70 from drawDesk origin)
-    { x: 645, y: 145, type: 'chair', facing: 'up' },   // desk 1 chair (desk at 580,70)
-    { x: 765, y: 145, type: 'chair', facing: 'up' },   // desk 2 chair (desk at 700,70)
-    { x: 645, y: 275, type: 'chair', facing: 'up' },   // desk 3 chair (desk at 580,200)
-    { x: 765, y: 275, type: 'chair', facing: 'up' },   // desk 4 chair (desk at 700,200)
-    // Standing desk (below desk at 790,100)
-    { x: 817, y: 155, type: 'stand', facing: 'up' },   // standing desk
+    // Workstation desks — coding at monitors
+    { x: 645, y: 145, type: 'chair', facing: 'up', act: 'coding' },    // desk 1
+    { x: 765, y: 145, type: 'chair', facing: 'up', act: 'coding' },    // desk 2
+    { x: 645, y: 275, type: 'chair', facing: 'up', act: 'coding' },    // desk 3
+    { x: 765, y: 275, type: 'chair', facing: 'up', act: 'coding' },    // desk 4
+    // Standing desk — also coding
+    { x: 817, y: 155, type: 'stand', facing: 'up', act: 'coding' },    // standing desk
+    // Whiteboard — sketching/planning
+    { x: 835, y: 130, type: 'stand', facing: 'right', act: 'thinking' }, // at whiteboard
+    // Open floor — reviewing work
+    { x: 700, y: 340, type: 'stand', facing: 'up', act: 'reading' },   // standing review
   ],
   'meeting-room': [
-    // Conference table chairs (5 each side)
-    { x: 80,  y: 524, type: 'chair', facing: 'down' },
-    { x: 110, y: 524, type: 'chair', facing: 'down' },
-    { x: 140, y: 524, type: 'chair', facing: 'down' },
-    { x: 170, y: 524, type: 'chair', facing: 'down' },
-    { x: 200, y: 524, type: 'chair', facing: 'down' },
-    { x: 80,  y: 598, type: 'chair', facing: 'up' },
-    { x: 110, y: 598, type: 'chair', facing: 'up' },
-    { x: 140, y: 598, type: 'chair', facing: 'up' },
-    { x: 170, y: 598, type: 'chair', facing: 'up' },
-    { x: 200, y: 598, type: 'chair', facing: 'up' },
+    // Conference table — presenting, thinking, planning
+    { x: 80,  y: 520, type: 'chair', facing: 'down', act: 'presenting' },
+    { x: 110, y: 520, type: 'chair', facing: 'down', act: 'thinking' },
+    { x: 140, y: 520, type: 'chair', facing: 'down', act: 'presenting' },
+    { x: 170, y: 520, type: 'chair', facing: 'down', act: 'thinking' },
+    { x: 200, y: 520, type: 'chair', facing: 'down', act: 'presenting' },
+    { x: 80,  y: 602, type: 'chair', facing: 'up', act: 'thinking' },
+    { x: 110, y: 602, type: 'chair', facing: 'up', act: 'presenting' },
+    { x: 140, y: 602, type: 'chair', facing: 'up', act: 'thinking' },
+    { x: 170, y: 602, type: 'chair', facing: 'up', act: 'presenting' },
+    { x: 200, y: 602, type: 'chair', facing: 'up', act: 'thinking' },
+    // Whiteboard — diagramming
+    { x: 60,  y: 510, type: 'stand', facing: 'left', act: 'presenting' },
+    // Recruiter spot — standing near projector screen, away from table
+    { x: 140, y: 648, type: 'stand', facing: 'up', act: 'idle' },
   ],
   'coffee': [
-    { x: 360, y: 568, type: 'stool', facing: 'up' },
-    { x: 410, y: 568, type: 'stool', facing: 'up' },
-    { x: 460, y: 568, type: 'stool', facing: 'up' },
-    { x: 510, y: 568, type: 'stool', facing: 'up' },
-    { x: 385, y: 500, type: 'stand', facing: 'down' },
-    { x: 450, y: 530, type: 'stand', facing: 'up' },    // fruit water dispenser 1
-    { x: 508, y: 530, type: 'stand', facing: 'up' },    // fruit water dispenser 2
+    // Bar stools — coffee break
+    { x: 360, y: 568, type: 'stool', facing: 'up', act: 'drinking-coffee' },
+    { x: 410, y: 568, type: 'stool', facing: 'up', act: 'drinking-coffee' },
+    { x: 460, y: 568, type: 'stool', facing: 'up', act: 'drinking-coffee' },
+    { x: 510, y: 568, type: 'stool', facing: 'up', act: 'drinking-coffee' },
+    // Espresso machine — making coffee
+    { x: 385, y: 500, type: 'stand', facing: 'down', act: 'drinking-coffee' },
+    // Fruit water — chatting by the dispenser
+    { x: 450, y: 530, type: 'stand', facing: 'up', act: 'chatting' },
+    { x: 508, y: 530, type: 'stand', facing: 'up', act: 'chatting' },
   ],
   'water-cooler': [
-    { x: 700, y: 545, type: 'sofa', facing: 'down' },
-    { x: 750, y: 545, type: 'sofa', facing: 'down' },
-    { x: 800, y: 545, type: 'sofa', facing: 'down' },
-    { x: 675, y: 570, type: 'sofa', facing: 'right' },
-    { x: 675, y: 610, type: 'sofa', facing: 'right' },
-    { x: 760, y: 600, type: 'stand', facing: 'down' },
+    // Sofa — relaxing, chatting
+    { x: 700, y: 545, type: 'sofa', facing: 'down', act: 'chatting' },
+    { x: 750, y: 545, type: 'sofa', facing: 'down', act: 'chatting' },
+    { x: 800, y: 545, type: 'sofa', facing: 'down', act: 'reading' },
+    { x: 675, y: 570, type: 'sofa', facing: 'right', act: 'chatting' },
+    { x: 675, y: 610, type: 'sofa', facing: 'right', act: 'idle' },
+    // Standing — casual conversation
+    { x: 760, y: 600, type: 'stand', facing: 'down', act: 'chatting' },
+    // Coffee table — reviewing on laptop
+    { x: 730, y: 580, type: 'stand', facing: 'down', act: 'reading' },
   ],
   'server-room': [
-    { x: 1030, y: 540, type: 'stand', facing: 'right' },
-    { x: 1075, y: 540, type: 'stand', facing: 'right' },
-    { x: 1050, y: 600, type: 'stand', facing: 'up' },
+    // Server rack positions — monitoring, running commands
+    { x: 1030, y: 540, type: 'stand', facing: 'right', act: 'running-command' },
+    { x: 1075, y: 540, type: 'stand', facing: 'right', act: 'running-command' },
+    { x: 1050, y: 600, type: 'stand', facing: 'up', act: 'running-command' },
+    // Open area — checking terminal on laptop
+    { x: 1050, y: 490, type: 'stand', facing: 'right', act: 'searching' },
   ],
   'web-booth': [
-    { x: 77, y: 100, type: 'chair', facing: 'up' },   // chair below desk (desk at 52,58)
+    // Desk — browsing
+    { x: 77, y: 100, type: 'chair', facing: 'up', act: 'browsing' },
+    // Standing near globe — researching
+    { x: 95, y: 115, type: 'stand', facing: 'right', act: 'searching' },
   ],
   'phone-b': [
-    { x: 1097, y: 100, type: 'chair', facing: 'up' },   // chair below desk (booth desk at 1075,65)
+    // Desk — focused work
+    { x: 1097, y: 100, type: 'chair', facing: 'up', act: 'coding' },
   ],
   'lobby': [
-    { x: 100, y: 425, type: 'stand', facing: 'right' },
-    { x: 160, y: 435, type: 'stand', facing: 'left' },
+    // Reception desk — arriving, greeting
+    { x: 100, y: 425, type: 'stand', facing: 'right', act: 'arriving' },
+    { x: 160, y: 435, type: 'stand', facing: 'left', act: 'idle' },
+    // Near entrance
+    { x: 130, y: 445, type: 'stand', facing: 'down', act: 'arriving' },
   ],
 };
 
@@ -975,8 +964,12 @@ let monitorScreenOverlays = []; // Graphics objects for active monitor screens
 // Track which interaction points are occupied { 'room:index' -> beeId }
 const occupiedPoints = {};
 
-/** Find a free interaction point for a bee in a room. Queen gets priority (index 0). */
-function findInteractionPoint(roomId, beeId, isQueen) {
+/**
+ * Find a free interaction point for a bee in a room.
+ * Prefers points whose `act` tag matches the bee's current activity.
+ * Queen gets priority for activity-matched points.
+ */
+function findInteractionPoint(roomId, beeId, isQueen, beeActivity) {
   const points = INTERACTION_POINTS[roomId];
   if (!points || points.length === 0) return null;
 
@@ -985,25 +978,38 @@ function findInteractionPoint(roomId, beeId, isQueen) {
     if (occupiedPoints[key] === beeId) delete occupiedPoints[key];
   }
 
-  // Queen gets first point
-  if (isQueen) {
-    const key = `${roomId}:0`;
-    occupiedPoints[key] = beeId;
-    return points[0];
-  }
-
-  // Workers take next available
+  // Partition into activity-matched and other points
+  const matched = [];
+  const other = [];
   for (let i = 0; i < points.length; i++) {
     const key = `${roomId}:${i}`;
-    if (!occupiedPoints[key]) {
-      occupiedPoints[key] = beeId;
-      return points[i];
+    const free = !occupiedPoints[key];
+    if (beeActivity && points[i].act === beeActivity) {
+      matched.push({ i, pt: points[i], free });
+    } else {
+      other.push({ i, pt: points[i], free });
     }
   }
 
-  // All taken — return a random offset near a point
-  const pt = points[Math.floor(Math.random() * points.length)];
-  return { x: pt.x + (Math.random() - 0.5) * 20, y: pt.y + (Math.random() - 0.5) * 20, type: 'stand', facing: pt.facing };
+  // Queen: pick first free activity-matched point, else first free any point, else index 0
+  if (isQueen) {
+    const pick = matched.find(p => p.free) || other.find(p => p.free) || matched[0] || { i: 0, pt: points[0] };
+    const key = `${roomId}:${pick.i}`;
+    occupiedPoints[key] = beeId;
+    return pick.pt;
+  }
+
+  // Non-queen: prefer free activity-matched, then free any
+  const pick = matched.find(p => p.free) || other.find(p => p.free);
+  if (pick) {
+    const key = `${roomId}:${pick.i}`;
+    occupiedPoints[key] = beeId;
+    return pick.pt;
+  }
+
+  // All taken — return a random offset near a matched or random point
+  const base = matched.length > 0 ? matched[0].pt : points[Math.floor(Math.random() * points.length)];
+  return { x: base.x + (Math.random() - 0.5) * 20, y: base.y + (Math.random() - 0.5) * 20, type: 'stand', facing: base.facing, act: base.act };
 }
 
 /** Find nearest interaction point type within radius. Returns {type, room} or null. */
@@ -1021,6 +1027,9 @@ function findNearestInteractionInfo(x, y, roomId) {
 /** Map interaction point + room context to a bee activity */
 function interactionToActivity(point, roomId) {
   if (!point) return 'idle';
+  // Use the point's activity tag if available
+  if (point.act) return point.act;
+  // Fallback for untagged points
   const t = point.type;
   switch (roomId) {
     case 'studio':
@@ -1044,12 +1053,18 @@ function interactionToActivity(point, roomId) {
 /** Map activity to expression */
 function activityToExpression(activity) {
   switch (activity) {
-    case 'coding': case 'reading': case 'searching': case 'browsing': case 'running-command': case 'thinking':
+    case 'coding': case 'reading': case 'searching': case 'browsing': case 'thinking':
       return 'focused';
-    case 'presenting': case 'celebrating': case 'arriving':
+    case 'running-command':
+      return 'surprised'; // anticipation while commands run
+    case 'presenting':
       return 'happy';
+    case 'celebrating': case 'arriving':
+      return 'excited';
     case 'drinking-coffee': case 'chatting':
       return 'sleepy';
+    case 'walking':
+      return 'neutral';
     default:
       return 'neutral';
   }
@@ -1140,6 +1155,60 @@ function drawBeeFace(g, s, expression, eyeOffX = 0, eyeOffY = 0) {
       g.ellipse(12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.5 });
       break;
 
+    case 'excited':
+      // Sparkling upturned eyes, big grin, bouncy
+      g.ellipse(-7*s, -27*s, 7*s, 6*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -26*s+oy, 5*s, 4.5*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -29*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(-9*s+ox, -25*s+oy, 1.5*s).fill(0xffffff);
+      // Sparkle near left eye (cross shape)
+      g.moveTo(-15*s, -36*s).lineTo(-15*s, -30*s).stroke({ color: 0xfbbf24, width: 1.5*s, alpha: 0.7 });
+      g.moveTo(-18*s, -33*s).lineTo(-12*s, -33*s).stroke({ color: 0xfbbf24, width: 1.5*s, alpha: 0.7 });
+      g.ellipse(7*s, -27*s, 7*s, 6*s).fill(0xffffff);
+      g.ellipse(7*s+ox, -26*s+oy, 5*s, 4.5*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -29*s+oy, 2.5*s).fill(0xffffff);
+      g.circle(5*s+ox, -25*s+oy, 1.5*s).fill(0xffffff);
+      // Sparkle near right eye (cross shape)
+      g.moveTo(15*s, -36*s).lineTo(15*s, -30*s).stroke({ color: 0xfbbf24, width: 1.5*s, alpha: 0.7 });
+      g.moveTo(12*s, -33*s).lineTo(18*s, -33*s).stroke({ color: 0xfbbf24, width: 1.5*s, alpha: 0.7 });
+      // Big open smile
+      g.arc(0, -17*s, 6*s, 0.1, Math.PI - 0.1).stroke({ color: 0x78716c, width: 2*s });
+      g.arc(0, -17*s, 4*s, 0.3, Math.PI - 0.3).fill({ color: 0xfca5a5, alpha: 0.3 });
+      // Deep blush
+      g.ellipse(-13*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.6 });
+      g.ellipse(13*s, -21*s, 5*s, 3*s).fill({ color: 0xfca5a5, alpha: 0.6 });
+      break;
+
+    case 'confused':
+      // Asymmetric eyes (one bigger), squiggly mouth, sweat drop
+      g.ellipse(-7*s, -26*s, 6*s, 7*s).fill(0xffffff);
+      g.ellipse(-7*s+ox, -26*s+oy, 4*s, 5*s).fill(0x1a1a1a);
+      g.circle(-5*s+ox, -28*s+oy, 2*s).fill(0xffffff);
+      g.ellipse(7*s, -25*s, 7*s, 5*s).fill(0xffffff); // smaller right eye
+      g.ellipse(7*s+ox, -24*s+oy, 4.5*s, 3.5*s).fill(0x1a1a1a);
+      g.circle(9*s+ox, -26*s+oy, 1.5*s).fill(0xffffff);
+      // Squiggly mouth
+      g.moveTo(-5*s, -17*s).quadraticCurveTo(-2*s, -15*s, 0, -18*s)
+       .quadraticCurveTo(2*s, -20*s, 5*s, -17*s)
+       .stroke({ color: 0x78716c, width: 1.5*s });
+      // Sweat drop
+      g.ellipse(16*s, -32*s, 2.5*s, 3.5*s).fill({ color: 0x93c5fd, alpha: 0.6 });
+      g.ellipse(16*s, -33*s, 1.5*s, 1.5*s).fill({ color: 0xffffff, alpha: 0.4 });
+      // Light blush
+      g.ellipse(-12*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.3 });
+      g.ellipse(12*s, -21*s, 4*s, 2*s).fill({ color: 0xfca5a5, alpha: 0.3 });
+      break;
+
+    case 'blink':
+      // Closed eyes for blink animation — flat lines
+      g.moveTo(-12*s, -26*s).lineTo(-2*s, -26*s).stroke({ color: 0x1a1a1a, width: 2.5*s, cap: 'round' });
+      g.moveTo(2*s, -26*s).lineTo(12*s, -26*s).stroke({ color: 0x1a1a1a, width: 2.5*s, cap: 'round' });
+      // Mild smile
+      g.arc(0, -18*s, 4*s, 0.15, Math.PI - 0.15).stroke({ color: 0x78716c, width: 1.5*s });
+      g.ellipse(-12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      g.ellipse(12*s, -21*s, 4.5*s, 2.5*s).fill({ color: 0xfca5a5, alpha: 0.45 });
+      break;
+
     default: // neutral
       g.ellipse(-7*s, -26*s, 6.5*s, 7*s).fill(0xffffff);
       g.ellipse(-7*s+ox, -25*s+oy, 4.5*s, 5*s).fill(0x1a1a1a);
@@ -1177,18 +1246,57 @@ function drawFloor() {
   const g = new Graphics();
   // Dark floor base
   g.rect(0, 0, CANVAS_W, CANVAS_H).fill(P.floor);
-  // Grid — visible tile pattern
-  for (let y = 0; y < CANVAS_H; y += 20) {
-    g.moveTo(0, y).lineTo(CANVAS_W, y).stroke({ color: P.floorLine, width: 0.6, alpha: 0.5 });
-  }
-  for (let x = 0; x < CANVAS_W; x += 40) {
-    g.moveTo(x, 0).lineTo(x, CANVAS_H).stroke({ color: P.floorLine, width: 0.5, alpha: 0.3 });
+
+  // Pokemon-style perspective grid — lines converge toward vanishing point above canvas
+  const VP_X = CANVAS_W / 2;
+  const PERSP = 0.15; // strong perspective convergence
+
+  // Horizontal grid lines — spacing compresses toward top (far away)
+  for (let row = 0; row < 40; row++) {
+    const t = row / 40;
+    // Exponential compression: lines bunch up at the top
+    const y = CANVAS_H * (1 - Math.pow(1 - t, 1.4));
+    const lineAlpha = 0.15 + t * 0.45; // much brighter near bottom
+    const lineWidth = 0.3 + t * 0.6;   // thicker near bottom
+    g.moveTo(0, y).lineTo(CANVAS_W, y)
+      .stroke({ color: P.floorLine, width: lineWidth, alpha: lineAlpha });
   }
 
-  // Vignette — darken edges for depth
-  const VIG = 100;
-  g.rect(0, 0, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.12 });
-  g.rect(0, CANVAS_H - VIG, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.15 });
+  // Vertical grid lines — converge toward vanishing point
+  for (let col = 0; col <= 30; col++) {
+    const baseX = col * (CANVAS_W / 30);
+    const topX = baseX + (VP_X - baseX) * PERSP;
+    // Line gets thinner/fainter toward top
+    g.moveTo(topX, 0).lineTo(baseX, CANVAS_H)
+      .stroke({ color: P.floorLine, width: 0.5, alpha: 0.3 });
+  }
+
+  // Strong depth gradient — top significantly darker, bottom lighter
+  const DEPTH_BANDS = 16;
+  for (let i = 0; i < DEPTH_BANDS; i++) {
+    const t = i / DEPTH_BANDS;
+    const bandH = CANVAS_H / DEPTH_BANDS;
+    // Top is noticeably darker
+    g.rect(0, t * CANVAS_H, CANVAS_W, bandH)
+      .fill({ color: 0x000000, alpha: 0.18 * Math.pow(1 - t, 1.5) });
+  }
+
+  // Warm-to-cool depth haze — visible color temperature shift
+  for (let i = 0; i < 8; i++) {
+    const t = i / 8;
+    const bandH = CANVAS_H / 8;
+    // Warm amber glow at bottom (near)
+    g.rect(0, CANVAS_H - (t + 1) * bandH, CANVAS_W, bandH)
+      .fill({ color: 0xD4A545, alpha: 0.035 * (1 - t) });
+    // Cool blue fog at top (far)
+    g.rect(0, t * bandH, CANVAS_W, bandH)
+      .fill({ color: 0x4A7A9B, alpha: 0.04 * (1 - t) });
+  }
+
+  // Vignette — stronger at top (depth fog), lighter at bottom
+  const VIG = 140;
+  g.rect(0, 0, CANVAS_W, VIG).fill({ color: 0x0A1520, alpha: 0.15 });
+  g.rect(0, CANVAS_H - VIG, CANVAS_W, VIG).fill({ color: 0x000000, alpha: 0.03 });
   g.rect(0, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.08 });
   g.rect(CANVAS_W - VIG, 0, VIG, CANVAS_H).fill({ color: 0x000000, alpha: 0.08 });
 
@@ -1196,7 +1304,6 @@ function drawFloor() {
 }
 
 // --- Rooms ---
-const WALL_H = 8;   // Isometric wall height (pixels)
 const SHADOW_OFF = 6; // Drop shadow offset
 
 function drawRooms() {
@@ -1205,36 +1312,91 @@ function drawRooms() {
     const { x, y, w, h } = room;
     const r = 6; // corner radius
 
-    // ── Drop shadow (offset down-right) ──
+    // Depth factor — 0 at top of map (far), 1 at bottom (near)
+    const depthT = Math.max(0, Math.min(1, (y + h / 2) / CANVAS_H));
+    const WALL_H = 4 + depthT * 14; // 4px (far) → 18px (near) — very noticeable
+    const shadowAlpha = 0.15 + depthT * 0.20;
+
+    // ── Drop shadow (offset down, stronger for closer rooms) ──
     const shadow = new Graphics();
-    shadow.roundRect(x + SHADOW_OFF, y + SHADOW_OFF, w, h, r).fill({ color: 0x000000, alpha: 0.25 });
-    shadow.roundRect(x + 3, y + 3, w, h, r).fill({ color: 0x000000, alpha: 0.12 });
+    shadow.roundRect(x + 4, y + WALL_H + 4, w, h, r).fill({ color: 0x000000, alpha: shadowAlpha });
+    shadow.roundRect(x + 2, y + WALL_H + 2, w, h, r).fill({ color: 0x000000, alpha: shadowAlpha * 0.4 });
     c.addChild(shadow);
 
-    // ── Raised wall base (3D thickness — bottom and right edges) ──
-    const wallBase = new Graphics();
-    // Bottom wall face
-    wallBase.moveTo(x + r, y + h);
-    wallBase.lineTo(x + w - r, y + h);
-    wallBase.lineTo(x + w - r, y + h + WALL_H);
-    wallBase.lineTo(x + r, y + h + WALL_H);
-    wallBase.closePath();
-    wallBase.fill({ color: P.dark, alpha: 0.5 });
-    // Right wall face
-    wallBase.moveTo(x + w, y + r);
-    wallBase.lineTo(x + w, y + h - r);
-    wallBase.lineTo(x + w + WALL_H * 0.6, y + h - r + WALL_H * 0.6);
-    wallBase.lineTo(x + w + WALL_H * 0.6, y + r + WALL_H * 0.6);
-    wallBase.closePath();
-    wallBase.fill({ color: P.dark, alpha: 0.35 });
-    c.addChild(wallBase);
+    // ── Pokemon ¾-view walls — lighter than floor so they're visible ──
+    const wallGfx = new Graphics();
+    // Lighten room color for walls (add white) instead of darkening
+    const lighten = (color, amt) => {
+      const cr = Math.min(255, ((color >> 16) & 0xFF) + amt);
+      const cg = Math.min(255, ((color >> 8) & 0xFF) + amt);
+      const cb = Math.min(255, (color & 0xFF) + amt);
+      return (cr << 16) | (cg << 8) | cb;
+    };
+    const wallFront = lighten(room.color, 45);   // Bright front face
+    const wallSide = lighten(room.color, 20);     // Medium side face
+    const wallTop = lighten(room.color, 60);      // Brightest top edge
 
-    // ── Floor fill — bright enough to read as a room, not a hole ──
+    // TOP WALL FACE — the main visible face (north wall, looking down)
+    wallGfx.rect(x, y - WALL_H, w, WALL_H).fill(wallFront);
+    // Bright highlight at top edge
+    wallGfx.rect(x, y - WALL_H, w, 3).fill(wallTop);
+    wallGfx.rect(x, y - WALL_H, w, 1.5).fill({ color: 0xffffff, alpha: 0.25 });
+    // Dark line where wall meets floor
+    wallGfx.rect(x, y - 1, w, 2).fill({ color: 0x000000, alpha: 0.35 });
+    // Horizontal panel/brick lines on wall face
+    const panelCount = Math.max(1, Math.round(WALL_H / 5));
+    for (let i = 1; i < panelCount; i++) {
+      const ly = y - WALL_H + (WALL_H / panelCount) * i;
+      wallGfx.moveTo(x + 3, ly).lineTo(x + w - 3, ly)
+        .stroke({ color: 0x000000, width: 0.7, alpha: 0.1 });
+    }
+    // Vertical panel divisions on larger walls
+    if (w > 120) {
+      const vPanels = Math.floor(w / 60);
+      for (let i = 1; i < vPanels; i++) {
+        const lx = x + (w / vPanels) * i;
+        wallGfx.moveTo(lx, y - WALL_H + 2).lineTo(lx, y - 1)
+          .stroke({ color: 0x000000, width: 0.5, alpha: 0.08 });
+      }
+    }
+
+    // LEFT WALL FACE — side face, slightly darker
+    const sideW = Math.min(WALL_H * 0.5, 10);
+    wallGfx.rect(x - sideW, y - WALL_H, sideW, h + WALL_H).fill(wallSide);
+    // Left edge highlight
+    wallGfx.rect(x - sideW, y - WALL_H, 1.5, h + WALL_H).fill({ color: 0xffffff, alpha: 0.12 });
+    // Inner edge shadow (where side meets front)
+    wallGfx.rect(x - 1, y - WALL_H, 2, h + WALL_H).fill({ color: 0x000000, alpha: 0.15 });
+
+    // RIGHT WALL FACE — darker side (shadow side)
+    const rightSide = lighten(room.color, 10);
+    wallGfx.rect(x + w, y - WALL_H, sideW, h + WALL_H).fill(rightSide);
+    wallGfx.rect(x + w, y - WALL_H, 2, h + WALL_H).fill({ color: 0x000000, alpha: 0.12 });
+    wallGfx.rect(x + w + sideW - 1.5, y - WALL_H, 1.5, h + WALL_H)
+      .fill({ color: 0x000000, alpha: 0.1 });
+
+    // BOTTOM WALL FACE — south wall, visible below floor
+    const bottomH = WALL_H * 0.5;
+    wallGfx.rect(x - sideW, y + h, w + sideW * 2, bottomH).fill(wallFront);
+    wallGfx.rect(x - sideW, y + h, w + sideW * 2, 1.5).fill({ color: 0x000000, alpha: 0.25 });
+    // Cast shadow below south wall
+    wallGfx.rect(x - sideW + 2, y + h + bottomH, w + sideW * 2 - 4, 4)
+      .fill({ color: 0x000000, alpha: 0.2 });
+
+    c.addChild(wallGfx);
+
+    // ── Floor fill — depth-aware brightness (near rooms brighter) ──
     const bg = new Graphics();
     bg.roundRect(x, y, w, h, r).fill({ color: room.color, alpha: 0.85 });
-    // Interior warmth — rooms feel lit from overhead
-    bg.roundRect(x + 4, y + 4, w - 8, h - 8, r).fill({ color: 0xffffff, alpha: 0.06 });
-    // Top-left highlight (simulated light source)
+    // Interior warmth — near rooms noticeably brighter
+    const warmth = 0.03 + depthT * 0.10;
+    bg.roundRect(x + 4, y + 4, w - 8, h - 8, r).fill({ color: 0xffffff, alpha: warmth });
+    // Far rooms get a blue-ish tint (depth fog)
+    if (depthT < 0.4) {
+      bg.roundRect(x + 2, y + 2, w - 4, h - 4, r)
+        .fill({ color: 0x4A7A9B, alpha: 0.06 * (1 - depthT / 0.4) });
+    }
+    // Top-left highlight (simulated overhead light)
     bg.roundRect(x + 2, y + 2, w * 0.55, h * 0.45, r).fill({ color: 0xffffff, alpha: 0.08 });
     // Bottom-right darkening
     bg.roundRect(x + w * 0.35, y + h * 0.45, w * 0.63, h * 0.53, r).fill({ color: 0x000000, alpha: 0.10 });
@@ -1387,13 +1549,31 @@ function drawRooms() {
     }
     c.addChild(doorGfx);
 
-    // ── Accent strip (top edge — raised look with highlight) ──
+    // ── Accent strip (on top of wall — colored cap) ──
     const strip = new Graphics();
-    strip.roundRect(x, y - 3, w, 6, 2).fill(room.accent);
-    strip.roundRect(x, y - 3, w, 2, 1).fill({ color: 0xffffff, alpha: 0.25 });
-    // Subtle glow below accent
-    strip.roundRect(x + 2, y + 3, w - 4, 6, 2).fill({ color: room.accent, alpha: 0.10 });
+    strip.roundRect(x - 1, y - WALL_H - 3, w + 2, 5, 2).fill(room.accent);
+    strip.roundRect(x - 1, y - WALL_H - 3, w + 2, 2, 1).fill({ color: 0xffffff, alpha: 0.3 });
+    // Accent glow on floor edge
+    strip.roundRect(x + 2, y + 1, w - 4, 4, 2).fill({ color: room.accent, alpha: 0.08 });
     c.addChild(strip);
+
+    // ── Room name label (depth-scaled font) ──
+    const labelSize = 8 + depthT * 6; // 8px (far) → 14px (near)
+    const roomLabel = new Text({
+      text: room.label.toUpperCase(),
+      style: new TextStyle({
+        fontFamily: 'Inter, sans-serif',
+        fontSize: labelSize,
+        fontWeight: '700',
+        fill: room.accent,
+        letterSpacing: 1 + depthT * 2,
+      }),
+    });
+    roomLabel.anchor.set(0.5, 0);
+    roomLabel.x = x + w / 2;
+    roomLabel.y = y + h - labelSize - 8;
+    roomLabel.alpha = 0.3 + depthT * 0.25;
+    c.addChild(roomLabel);
 
     layers.rooms.addChild(c);
   }
@@ -1435,17 +1615,23 @@ function drawWallWithGaps(g, x1, y1, x2, y2, doors, wallLen, style, vertical = f
 // --- Furniture ---
 /** Draw a soft drop shadow under a rectangle */
 function drawShadow(g, x, y, w, h, r = 4, alpha = 0.25) {
-  g.roundRect(x + 7, y + 7, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.25 });
-  g.roundRect(x + 4, y + 4, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.55 });
-  g.roundRect(x + 2, y + 2, w, h, r).fill({ color: 0x000000, alpha: alpha * 0.35 });
+  // Depth-aware shadow — much longer for closer objects
+  const depthT = Math.max(0, Math.min(1, y / CANVAS_H));
+  const off = 3 + depthT * 8; // 3px (top) → 11px (bottom)
+  const a = alpha * (0.6 + depthT * 0.4); // stronger near bottom
+  g.roundRect(x + off, y + off, w, h, r).fill({ color: 0x000000, alpha: a * 0.25 });
+  g.roundRect(x + off * 0.6, y + off * 0.6, w, h, r).fill({ color: 0x000000, alpha: a * 0.55 });
+  g.roundRect(x + off * 0.3, y + off * 0.3, w, h, r).fill({ color: 0x000000, alpha: a * 0.35 });
 }
 
 function drawFurniture() {
   const g = new Graphics();
+  // All rooms always drawn (no progressive unlock)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LIBRARY (250,40,280,340) — bookshelves, reading desks, armchair, lamps
   // ═══════════════════════════════════════════════════════════════════════════
+  { // library
 
   // Bookshelves along left wall (inside library)
   const bookColors = [0xef4444, 0x3b82f6, 0x22c55e, 0xf59e0b, 0x8b5cf6, 0xec4899, 0x06b6d4, 0xf97316];
@@ -1516,9 +1702,12 @@ function drawFurniture() {
     g.roundRect(lx - 16, 170, 32, 4, 2).fill({ color: 0xD4A545, alpha: 0.04 });
   }
 
+  } // end library
+
   // ═══════════════════════════════════════════════════════════════════════════
   // STUDIO (550,40,300,340) — workstation desks with monitors, standing desk
   // ═══════════════════════════════════════════════════════════════════════════
+  { // studio
 
   // Ceiling track lights (brighter than library)
   for (let col = 0; col < 2; col++) {
@@ -1556,9 +1745,12 @@ function drawFurniture() {
   g.roundRect(842, 80, 8, 80, 2).fill(P.white);
   g.roundRect(842, 80, 8, 80, 2).stroke({ color: P.wallDark, width: 1.5 });
 
+  } // end studio
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CONFERENCE ROOM
   // ═══════════════════════════════════════════════════════════════════════════
+  { // meeting-room
   drawShadow(g, 70, 530, 140, 60, 6, 0.3);
   g.roundRect(70, 530, 140, 60, 6).fill(P.wood);
   g.roundRect(70, 530, 140, 60, 6).stroke({ width: 1.5, color: P.woodDark });
@@ -1579,9 +1771,12 @@ function drawFurniture() {
   g.roundRect(60, 650, 160, 6, 2).fill({ color: P.white, alpha: 0.3 });
   g.roundRect(135, 640, 10, 10, 2).fill(P.wallDark); // projector mount
 
+  } // end conference
+
   // ═══════════════════════════════════════════════════════════════════════════
   // KITCHEN — espresso bar + fruit water dispensers + bar stools
   // ═══════════════════════════════════════════════════════════════════════════
+  { // kitchen
 
   // Countertop (long L-shape)
   drawShadow(g, 350, 500, 180, 50, 4, 0.3);
@@ -1666,9 +1861,12 @@ function drawFurniture() {
   fwLabel.y = fwy + 58;
   layers.furniture.addChild(fwLabel);
 
+  } // end kitchen
+
   // ═══════════════════════════════════════════════════════════════════════════
   // LOUNGE
   // ═══════════════════════════════════════════════════════════════════════════
+  { // lounge
   drawShadow(g, 660, 530, 200, 100, 4, 0.25);
   // L-shaped sofa with cushion depth
   g.roundRect(660, 530, 200, 20, 4).fill(P.cushion);
@@ -1687,9 +1885,12 @@ function drawFurniture() {
   g.roundRect(710, 576, 15, 10, 1).fill(0xFCA5A5);
   g.roundRect(728, 578, 15, 8, 1).fill(0x93C5FD);
 
+  } // end lounge
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SERVER ROOM
   // ═══════════════════════════════════════════════════════════════════════════
+  { // server-room
   for (let i = 0; i < 2; i++) {
     const sx = 1015 + i * 45;
     drawShadow(g, sx, 490, 30, 120, 3, 0.3);
@@ -1712,11 +1913,14 @@ function drawFurniture() {
     }
   }
 
+  } // end server room
+
   // ═══════════════════════════════════════════════════════════════════════════
   // WEB BOOTH + FOCUS BOOTH + LOBBY
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Web Booth — larger monitor with browser glow
+  { // web-booth
   drawShadow(g, 52, 58, 50, 30, 3, 0.25);
   g.roundRect(52, 58, 50, 30, 3).fill(P.wood);
   g.roundRect(52, 58, 50, 30, 3).stroke({ width: 1.5, color: P.woodDark });
@@ -1735,8 +1939,12 @@ function drawFurniture() {
   g.ellipse(100, 110, 8, 4).stroke({ width: 1, color: 0x7B68EE, alpha: 0.2 });
   g.rect(100, 102, 0.5, 16).fill({ color: 0x7B68EE, alpha: 0.2 });
 
+  } // end web-booth
+
   // Focus Booth
+  { // focus-booth
   drawPhoneBooth(g, 1075, 65);
+  } // end focus booth
 
   // Lobby reception desk
   drawShadow(g, 80, 415, 120, 20, 4, 0.25);
@@ -2098,7 +2306,7 @@ function hexToNum(c) {
 // --- Bee Graphics ---
 function createBeeGraphics(bee) {
   const c = new Container();
-  const scale = bee.role === 'queen' ? 1.0 : bee.role === 'recruiter' ? 0.85 : 0.65;
+  const scale = bee.role === 'queen' ? 1.0 : bee.role === 'recruiter' ? 0.85 : bee.role === 'hired' ? 0.72 : 0.65;
   const s = scale;
   const beeColor = hexToNum(bee.color) || 0xF59E0B;
   const stripeColor = darkenColor(beeColor, 0.3);
@@ -2336,6 +2544,77 @@ function drawAccessory(container, bee, s, beeColor) {
     g.moveTo(-23 * s, 9 * s).lineTo(-18 * s, 9 * s).stroke({ color: 0x60a5fa, width: 0.8 * s });
     g.moveTo(-23 * s, 11 * s).lineTo(-16 * s, 11 * s).stroke({ color: 0xfbbf24, width: 0.8 * s });
 
+  } else if (role === 'hired') {
+    const hType = bee.hiredType || 'developer';
+
+    if (hType === 'developer') {
+      // Headphones (over-ear) + carrying laptop
+      g.arc(0, -30 * s, 14 * s, -Math.PI * 0.82, -Math.PI * 0.18).stroke({ color: 0x374151, width: 2.5 * s });
+      g.roundRect(-17 * s, -27 * s, 7 * s, 9 * s, 3 * s).fill(0x374151);
+      g.roundRect(10 * s, -27 * s, 7 * s, 9 * s, 3 * s).fill(0x374151);
+      // Arms holding open laptop
+      g.moveTo(-16 * s, -4 * s).lineTo(-24 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.moveTo(16 * s, -4 * s).lineTo(24 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.roundRect(-28 * s, 2 * s, 18 * s, 12 * s, 2 * s).fill(P.wallDark);
+      g.roundRect(-27 * s, 3 * s, 16 * s, 9 * s, 1.5 * s).fill({ color: P.monGlow, alpha: 0.3 });
+      // Code lines on laptop
+      g.moveTo(-25 * s, 5 * s).lineTo(-15 * s, 5 * s).stroke({ color: 0x4ade80, width: 0.8 * s });
+      g.moveTo(-25 * s, 8 * s).lineTo(-18 * s, 8 * s).stroke({ color: 0x60a5fa, width: 0.8 * s });
+      g.moveTo(-25 * s, 11 * s).lineTo(-16 * s, 11 * s).stroke({ color: 0xfbbf24, width: 0.8 * s });
+
+    } else if (hType === 'designer') {
+      // Beret + stylus pen
+      g.ellipse(2, -38 * s, 12 * s, 5 * s).fill(0x8B5CF6);
+      g.circle(2, -43 * s, 3 * s).fill(0x8B5CF6);
+      // Arms: left holding tablet, right holding stylus
+      g.moveTo(-16 * s, -4 * s).lineTo(-22 * s, 6 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.moveTo(16 * s, -4 * s).lineTo(24 * s, 0).stroke({ color: 0xfef3c7, width: 2 * s });
+      // Tablet
+      g.roundRect(-28 * s, 2 * s, 16 * s, 20 * s, 2 * s).fill(0x374151);
+      g.roundRect(-27 * s, 3 * s, 14 * s, 17 * s, 1.5 * s).fill({ color: 0xc4b5fd, alpha: 0.3 });
+      // Stylus
+      g.moveTo(24 * s, 0).lineTo(30 * s, -10 * s).stroke({ color: 0x8B7355, width: 1.8 });
+      g.circle(30 * s, -10 * s, 1.5 * s).fill(0x8B5CF6);
+
+    } else if (hType === 'manager') {
+      // Glasses + phone held to ear
+      g.roundRect(-10 * s, -28 * s, 8 * s, 6 * s, 2 * s).stroke({ color: 0x1E3A5F, width: 1.2 });
+      g.roundRect(2 * s, -28 * s, 8 * s, 6 * s, 2 * s).stroke({ color: 0x1E3A5F, width: 1.2 });
+      g.moveTo(-2 * s, -25 * s).lineTo(2 * s, -25 * s).stroke({ color: 0x1E3A5F, width: 1 });
+      // Right arm: holding phone to ear
+      g.moveTo(16 * s, -4 * s).lineTo(20 * s, -16 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.roundRect(16 * s, -24 * s, 8 * s, 14 * s, 2 * s).fill(0x374151);
+      g.roundRect(17 * s, -23 * s, 6 * s, 10 * s, 1.5 * s).fill({ color: 0x3b82f6, alpha: 0.3 });
+      // Left arm: holding clipboard
+      g.moveTo(-16 * s, -4 * s).lineTo(-22 * s, 6 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.roundRect(-28 * s, 2 * s, 14 * s, 18 * s, 2 * s).fill(P.planter);
+      g.roundRect(-28 * s, 2 * s, 14 * s, 18 * s, 2 * s).stroke({ width: 1, color: 0xb8a88a });
+
+    } else if (hType === 'researcher') {
+      // Magnifying glass held up + laptop tucked under arm
+      g.moveTo(16 * s, -4 * s).lineTo(22 * s, -14 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.circle(26 * s, -20 * s, 8 * s).stroke({ color: 0x06B6D4, width: 2 * s });
+      g.circle(26 * s, -20 * s, 5 * s).fill({ color: 0x06B6D4, alpha: 0.15 });
+      g.moveTo(22 * s, -14 * s).lineTo(28 * s, -6 * s).stroke({ color: 0x8B7355, width: 2 * s });
+      // Left arm: laptop tucked
+      g.moveTo(-16 * s, -4 * s).lineTo(-20 * s, 8 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.roundRect(-26 * s, 4 * s, 14 * s, 10 * s, 1.5 * s).fill(P.wallDark);
+
+    } else if (hType === 'devops') {
+      // Hard hat + wrench
+      g.ellipse(0, -39 * s, 14 * s, 6 * s).fill(0xF97316);
+      g.roundRect(-12 * s, -42 * s, 24 * s, 8 * s, 4 * s).fill(0xF97316);
+      g.roundRect(-12 * s, -42 * s, 24 * s, 3 * s, 2 * s).fill({ color: 0xffffff, alpha: 0.15 });
+      // Arms: wrench in right hand, phone in left
+      g.moveTo(16 * s, -4 * s).lineTo(24 * s, 2 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.moveTo(24 * s, 2 * s).lineTo(30 * s, -4 * s).stroke({ color: 0x6B7280, width: 2 });
+      g.circle(30 * s, -4 * s, 3 * s).stroke({ color: 0x6B7280, width: 1.5 });
+      // Left arm: holding phone (checking alerts)
+      g.moveTo(-16 * s, -4 * s).lineTo(-22 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
+      g.roundRect(-28 * s, 0, 10 * s, 16 * s, 2 * s).fill(0x374151);
+      g.roundRect(-27 * s, 1 * s, 8 * s, 12 * s, 1.5 * s).fill({ color: 0xF97316, alpha: 0.3 });
+    }
+
   } else if (role === 'worker') {
     // Wrench in hand
     g.moveTo(16 * s, -4 * s).lineTo(22 * s, 4 * s).stroke({ color: 0xfef3c7, width: 2 * s });
@@ -2553,6 +2832,23 @@ function updatePlayerBee() {
       playerBee._facing = dy > 0 ? 'down' : 'up';
     }
     if (dx !== 0) flipBee(playerBee, dx < 0);
+    playerBee._moveFacing = playerBee._facing;
+  }
+  // Player blink animation
+  playerBee._blinkTimer = (playerBee._blinkTimer || Math.floor(Math.random() * 300)) - 1;
+  if (playerBee._blinkTimer <= 0) {
+    playerBee._blinkTimer = 200 + Math.floor(Math.random() * 200);
+    playerBee._blinkFrames = 8;
+  }
+  if (playerBee._blinkFrames > 0) {
+    playerBee._blinkFrames--;
+    if (playerBee._blinkFrames > 2) {
+      updateBeeExpression(playerBee, 'blink', playerBee._facing);
+    } else {
+      updateBeeExpression(playerBee, isMoving ? 'neutral' : 'happy', playerBee._facing);
+    }
+  } else {
+    updateBeeExpression(playerBee, isMoving ? 'neutral' : 'happy', playerBee._facing);
   }
   animateBee(playerBee, isMoving);
   // Update room
@@ -2624,6 +2920,64 @@ function updateAmbientBee(bee) {
   animateBee(bee, moved > 0.2);
 }
 
+/** Hired bees wander within their home room when idle (like ambient bees) */
+// Work room for each hired bee type (must match backend HIRED_BEE_WORKROOM)
+const HIRED_WORKROOM = {
+  developer: 'studio', designer: 'studio', researcher: 'library',
+  devops: 'server-room', manager: 'meeting-room',
+};
+
+// Idle rooms hired bees can wander to when session is inactive
+const HIRED_BREAK_ROOMS = ['coffee', 'water-cooler'];
+
+function updateHiredBeeIdle(bee) {
+  // Only wander if not being moved by backend (activity is idle or coffee)
+  if (bee.activity !== 'idle' && bee.activity !== 'drinking-coffee') return;
+  if (bee.path && bee.pathIndex < bee.path.length) return; // currently pathing
+
+  const sessionActive = officeState?.sessionActive;
+  const workRoom = HIRED_WORKROOM[bee.hiredType] || bee.room;
+
+  bee._hiredIdleTimer = (bee._hiredIdleTimer || 0) + 1;
+  const wanderDelay = sessionActive ? 500 + Math.random() * 400 : 300 + Math.random() * 300;
+
+  if (bee._hiredIdleTimer > wanderDelay) {
+    bee._hiredIdleTimer = 0;
+
+    if (sessionActive) {
+      // During active sessions: stay in work room, prefer activity-matched interaction points
+      const room = ROOMS.find(r => r.id === workRoom);
+      if (room) {
+        const ipt = findInteractionPoint(workRoom, bee.id, false, bee.activity);
+        if (ipt && Math.random() > 0.3) {
+          bee.targetX = ipt.x;
+          bee.targetY = ipt.y;
+        } else {
+          bee.targetX = room.x + room.w * (0.25 + Math.random() * 0.5);
+          bee.targetY = room.y + room.h * (0.3 + Math.random() * 0.4);
+        }
+      }
+    } else {
+      // Off-duty: sometimes wander to kitchen or lounge
+      const goBreak = Math.random() < 0.25;
+      const targetRoomId = goBreak
+        ? HIRED_BREAK_ROOMS[Math.floor(Math.random() * HIRED_BREAK_ROOMS.length)]
+        : workRoom;
+      const room = ROOMS.find(r => r.id === targetRoomId);
+      if (room) {
+        const ipt = findInteractionPoint(targetRoomId, bee.id, false, bee.activity);
+        if (ipt && Math.random() > 0.4) {
+          bee.targetX = ipt.x;
+          bee.targetY = ipt.y;
+        } else {
+          bee.targetX = room.x + room.w * (0.2 + Math.random() * 0.6);
+          bee.targetY = room.y + room.h * (0.25 + Math.random() * 0.5);
+        }
+      }
+    }
+  }
+}
+
 // --- Sync backend bees ---
 function syncBees(serverBees) {
   if (!serverBees) return;
@@ -2631,16 +2985,13 @@ function syncBees(serverBees) {
   const seen = new Set();
 
   for (const bee of serverBees) {
-    // Skip if this ID matches an ambient bee — backend doesn't know about them
-    if (ambientBees[bee.id]) continue;
-
     seen.add(bee.id);
     let sx = bee.targetX * COORD_SCALE;
     let sy = bee.targetY * COORD_SCALE;
 
-    // Snap to interaction point if available
+    // Snap to interaction point if available — pass activity so bees sit at relevant spots
     const isQueen = bee.role === 'queen' || bee.id === 'queen';
-    const ipt = findInteractionPoint(bee.room, bee.id, isQueen);
+    const ipt = findInteractionPoint(bee.room, bee.id, isQueen, bee.activity);
     let beeFacing = null;
     if (ipt) { sx = ipt.x; sy = ipt.y; beeFacing = ipt.facing || null; }
 
@@ -2691,8 +3042,12 @@ function syncBees(serverBees) {
       }
 
       // Update expression and facing direction
-      const expr = activityToExpression(bee.activity);
-      updateBeeExpression(lb, expr, beeFacing);
+      // Detect error state from message content for confused expression
+      const isError = bee.message && (bee.message.includes('failed') || bee.message.includes('error'));
+      const expr = isError ? 'confused' : activityToExpression(bee.activity);
+      // Set facing from interaction point, persists for eye direction
+      if (beeFacing) lb._facing = beeFacing;
+      updateBeeExpression(lb, expr, beeFacing || lb._moveFacing);
 
       // Flip body to face interaction point direction when stationary
       if (beeFacing === 'left') flipBee(lb, true);
@@ -2736,7 +3091,8 @@ function syncBees(serverBees) {
         if (path) { lb.path = path; lb.pathIndex = 0; lb._pathTargetRoom = bee.room; }
       }
 
-      // Set initial expression
+      // Set initial expression and facing
+      if (beeFacing) lb._facing = beeFacing;
       const expr = activityToExpression(bee.activity);
       updateBeeExpression(lb, expr, beeFacing);
 
@@ -2753,8 +3109,6 @@ function syncBees(serverBees) {
     }
   }
 
-  // Move ambient bees based on state context
-  moveAmbientBeesForContext(serverBees);
 }
 
 function moveAmbientBeesForContext(serverBees) {
@@ -2812,7 +3166,7 @@ function moveAmbientTo(bee, roomId) {
   const room = ROOMS.find(r => r.id === roomId);
   if (room) {
     // Use interaction point if available
-    const ipt = findInteractionPoint(roomId, bee.id, false);
+    const ipt = findInteractionPoint(roomId, bee.id, false, bee.activity);
     const tx = ipt ? ipt.x : room.x + room.w * (0.25 + Math.random() * 0.5);
     const ty = ipt ? ipt.y : room.y + room.h * (0.3 + Math.random() * 0.4);
     bee.targetX = tx;
@@ -2973,6 +3327,42 @@ function animateBee(bee, isMoving) {
         gfx._wingR.alpha = 0.6;
       }
 
+    } else if (act === 'celebrating') {
+      // ── Celebrating — bouncy happy dance ──
+      if (gfx._legL) {
+        gfx._legL.rotation = Math.sin(t * 2) * 0.3;
+        gfx._legR.rotation = Math.sin(t * 2 + Math.PI) * 0.3;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = Math.sin(t * 1.5) * 2 * s;
+        gfx._bodyC.y = -Math.abs(Math.sin(t * 2)) * 4 * s; // bounce up
+        gfx._bodyC.rotation = Math.sin(t * 1.5) * 0.05;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.8 + Math.sin(t * 3) * 0.3; // fast flutter
+        gfx._wingR.rotation = 0.8 - Math.sin(t * 3) * 0.3;
+        gfx._wingL.alpha = 0.7;
+        gfx._wingR.alpha = 0.7;
+      }
+
+    } else if (act === 'arriving') {
+      // ── Arriving — excited wave ──
+      if (gfx._legL) {
+        gfx._legL.rotation = 0;
+        gfx._legR.rotation = 0;
+      }
+      if (gfx._bodyC) {
+        gfx._bodyC.x = 0;
+        gfx._bodyC.y = Math.sin(t * 1.5) * 1 * s;
+        gfx._bodyC.rotation = 0;
+      }
+      if (gfx._wingL) {
+        gfx._wingL.rotation = -0.3 + Math.sin(t * 2) * 0.15;
+        gfx._wingR.rotation = -0.6 + Math.sin(t * 1.5) * 0.4; // waving
+        gfx._wingL.alpha = 0.6;
+        gfx._wingR.alpha = 0.7;
+      }
+
     } else {
       // ── Default idle ──
       if (gfx._legL) {
@@ -3020,16 +3410,80 @@ function updateAllBees() {
     bee.gfx.x = bee.drawX;
     bee.gfx.y = bee.drawY;
 
-    // Detect movement
+    // Pokemon-style depth scaling — bees lower on screen are clearly larger
+    const depthT = Math.max(0, Math.min(1, (bee.drawY - 40) / (CANVAS_H - 80)));
+    const depthScale = 0.72 + depthT * 0.48; // 0.72 (far/top) → 1.20 (near/bottom)
+    const signX = bee.gfx.scale.x < 0 ? -1 : 1;
+    bee.gfx.scale.set(signX * depthScale, depthScale);
+    // Shadow grows with proximity
+    if (bee.gfx._shadow) {
+      bee.gfx._shadow.alpha = 0.06 + depthT * 0.14;
+      bee.gfx._shadow.scale.set(0.8 + depthT * 0.4);
+    }
+
+    // Detect movement and update facing
     const moved = Math.abs(bee.drawX - prevX) + Math.abs(bee.drawY - prevY);
     const moveDx = bee.drawX - prevX;
+    const moveDy = bee.drawY - prevY;
     if (Math.abs(moveDx) > 0.15) flipBee(bee, moveDx < 0);
+
+    // Update facing direction based on movement (for eye pupil offset)
+    if (moved > 0.5) {
+      if (Math.abs(moveDx) > Math.abs(moveDy)) {
+        bee._moveFacing = moveDx > 0 ? 'right' : 'left';
+      } else {
+        bee._moveFacing = moveDy > 0 ? 'down' : 'up';
+      }
+    }
+
+    // Blink animation — random blinks every 3-7 seconds
+    bee._blinkTimer = (bee._blinkTimer || Math.floor(Math.random() * 300)) - 1;
+    if (bee._blinkTimer <= 0) {
+      bee._blinkTimer = 180 + Math.floor(Math.random() * 240); // 3-7s at 60fps
+      bee._blinkFrames = 8; // blink lasts ~8 frames
+    }
+    if (bee._blinkFrames > 0) {
+      bee._blinkFrames--;
+      if (bee._blinkFrames > 2) { // only show blink for middle frames
+        updateBeeExpression(bee, 'blink', bee._moveFacing || bee._facing);
+      } else {
+        // Restore real expression
+        const expr = activityToExpression(bee.activity);
+        updateBeeExpression(bee, expr, bee._moveFacing || bee._facing);
+      }
+    } else {
+      // Normal expression update with movement facing
+      const expr = activityToExpression(bee.activity);
+      const facing = bee._moveFacing || bee._facing;
+      updateBeeExpression(bee, expr, facing);
+    }
+
+    // Head bob while working (coding, reading, searching)
+    if (!moved && bee.gfx && bee.gfx._face) {
+      const act = bee.activity || 'idle';
+      if (act === 'coding' || act === 'reading' || act === 'searching') {
+        bee.gfx._face.y = Math.sin(frame * 0.05 + (bee.wingPhase || 0)) * 0.8;
+      } else {
+        bee.gfx._face.y = 0;
+      }
+    }
+
     animateBee(bee, moved > 0.3);
   }
 
-  // Ambient bees
-  for (const bee of Object.values(ambientBees)) {
-    updateAmbientBee(bee);
+  // Hired bees from backend — use same idle wander behavior
+  for (const bee of Object.values(localBees)) {
+    if (bee.role === 'hired') {
+      updateHiredBeeIdle(bee);
+    }
+  }
+
+  // Player bee depth scaling
+  if (playerBee && playerBee.gfx) {
+    const pDepthT = Math.max(0, Math.min(1, (playerBee.drawY - 40) / (CANVAS_H - 80)));
+    const pDepthScale = 0.85 * (0.72 + pDepthT * 0.48);
+    const pSignX = playerBee.gfx.scale.x < 0 ? -1 : 1;
+    playerBee.gfx.scale.set(pSignX * pDepthScale, pDepthScale);
   }
 
   // Z-sort bees by Y position (lower Y = further back)
@@ -3111,11 +3565,15 @@ function updateVisualEffects() {
     if (bee.room && bee.activity !== 'idle') activeRooms.add(bee.room);
   }
 
-  // Pollen particles — drift upward, respawn at bottom
+  // Pollen particles — drift upward, respawn at bottom, depth-scaled
   for (const p of particles) {
     p.gfx.x += p.vx + Math.sin(frame * 0.02 + p.phase) * 0.15;
     p.gfx.y += p.vy;
-    p.gfx.alpha = p.baseAlpha * (0.6 + Math.sin(frame * 0.03 + p.phase) * 0.4);
+    // Depth scaling — particles near camera are notably bigger/brighter
+    const pDepth = Math.max(0, Math.min(1, p.gfx.y / CANVAS_H));
+    const pScale = 0.5 + pDepth * 1.0; // 0.5x at top → 1.5x at bottom
+    p.gfx.scale.set(pScale);
+    p.gfx.alpha = p.baseAlpha * (0.3 + pDepth * 0.7) * (0.6 + Math.sin(frame * 0.03 + p.phase) * 0.4);
 
     // Only show in active rooms
     let inActive = false;
@@ -3167,7 +3625,6 @@ function updateVisualEffects() {
   const allBeesForMonitor = [
     ...(playerBee ? [playerBee] : []),
     ...Object.values(localBees),
-    ...Object.values(ambientBees),
   ];
   for (const mo of monitorScreenOverlays) {
     let occupied = false;
@@ -3303,8 +3760,8 @@ function updateCamera() {
     cameraTarget.y = CANVAS_H / 2 - cameraFollow.drawY * cameraTarget.zoom;
   }
 
-  // --- Edge-of-screen panning (LoL style) ---
-  if (!cameraFollow && mouseInCanvas && !isPanning && viewMode === 'single') {
+  // --- Edge-of-map panning (mouse near canvas edge) ---
+  if (!cameraFollow && mouseInCanvas && viewMode === 'single') {
     const rect = app.canvas.getBoundingClientRect();
     const vw = rect.width, vh = rect.height;
     let epx = 0, epy = 0;
@@ -3343,17 +3800,15 @@ function updateCamera() {
     }
   }
 
-  if (!isPanning) {
-    // Change cursor based on edge pan zone
-    if (mouseInCanvas && !cameraFollow) {
-      const rect = app.canvas.getBoundingClientRect();
-      const vw = rect.width, vh = rect.height;
-      const nearEdge = mouseViewX < EDGE_PAN_ZONE || mouseViewX > vw - EDGE_PAN_ZONE ||
-                       mouseViewY < EDGE_PAN_ZONE || mouseViewY > vh - EDGE_PAN_ZONE;
-      app.canvas.style.cursor = nearEdge ? 'crosshair' : 'grab';
-    } else {
-      app.canvas.style.cursor = 'grab';
-    }
+  // Cursor: crosshair when near edge, default otherwise
+  if (mouseInCanvas && !cameraFollow) {
+    const rect = app.canvas.getBoundingClientRect();
+    const vw = rect.width, vh = rect.height;
+    const nearEdge = mouseViewX < EDGE_PAN_ZONE || mouseViewX > vw - EDGE_PAN_ZONE ||
+                     mouseViewY < EDGE_PAN_ZONE || mouseViewY > vh - EDGE_PAN_ZONE;
+    app.canvas.style.cursor = nearEdge ? 'crosshair' : 'default';
+  } else {
+    app.canvas.style.cursor = 'default';
   }
 }
 
@@ -3553,6 +4008,23 @@ function connectWS() {
 function handleState(state) {
   officeState = state;
 
+  // Progressive office unlock — redraw rooms + furniture when level changes
+  if (state.officeLevel && state.officeLevel !== officeLevel) {
+    officeLevel = state.officeLevel;
+    unlockedRooms = state.unlockedRooms || unlockedRooms;
+    // Redraw rooms and furniture for the new level
+    layers.rooms.removeChildren();
+    layers.furniture.removeChildren();
+    drawRooms();
+    drawFurniture();
+  } else if (state.unlockedRooms && JSON.stringify(state.unlockedRooms) !== JSON.stringify(unlockedRooms)) {
+    unlockedRooms = state.unlockedRooms;
+    layers.rooms.removeChildren();
+    layers.furniture.removeChildren();
+    drawRooms();
+    drawFurniture();
+  }
+
   // Update stats
   if (state.stats) {
     setText('stat-tools', state.stats.toolCalls);
@@ -3572,6 +4044,7 @@ function handleState(state) {
     }
     lastHoney = state.shop.honey;
     renderShopPanel(state.shop);
+    if (activeShopTab === 'team') renderTeamPanel();
   }
 
   // Session status
@@ -3586,6 +4059,9 @@ function handleState(state) {
 
   // Sync ALL bees (visibility is toggled inside syncBees based on projectFilter)
   syncBees(state.bees);
+
+  // Update team portrait dock
+  renderTeamDock(state.bees);
 
   // Event log (filtered by project) — uses session history browser wrapper
   const filteredLog = projectFilter
@@ -4630,6 +5106,104 @@ function handleShopResult(payload) {
   }
 }
 
+// ============================================================================
+// Shop Tab Switching + Team Panel
+// ============================================================================
+
+let activeShopTab = 'cosmetics';
+let lastTeamKey = '';
+
+// Tab click handler
+document.querySelectorAll('.shop-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.shopTab;
+    if (!target || target === activeShopTab) return;
+    activeShopTab = target;
+
+    document.querySelectorAll('.shop-tab').forEach(t => t.classList.toggle('active', t.dataset.shopTab === target));
+    document.getElementById('shop-cosmetics-panel')?.classList.toggle('hidden', target !== 'cosmetics');
+    document.getElementById('shop-team-panel')?.classList.toggle('hidden', target !== 'team');
+
+    if (target === 'team' && officeState) renderTeamPanel();
+  });
+});
+
+function renderTeamPanel() {
+  if (!officeState) return;
+  const honey = officeState.shop?.honey || 0;
+  const bees = (officeState.bees || []).filter(b => b.role === 'hired');
+  const teamCount = bees.length;
+
+  // Fingerprint to avoid unnecessary re-renders
+  const key = `${honey}:${teamCount}:${bees.map(b => b.id).join(',')}`;
+  if (key === lastTeamKey) return;
+  lastTeamKey = key;
+
+  setText('shop-team-honey', honey);
+  setText('shop-team-count', `${teamCount}/8`);
+
+  // Roster — existing hired bees
+  const rosterEl = document.getElementById('shop-team-roster');
+  if (rosterEl) {
+    rosterEl.innerHTML = '';
+    if (bees.length === 0) {
+      rosterEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:11px;padding:8px 0;text-align:center">No team members yet</div>';
+    }
+    for (const bee of bees) {
+      const icon = HIRED_TYPE_ICONS[bee.hiredType] || '\uD83D\uDC1D';
+      const card = document.createElement('div');
+      card.className = 'shop-team-card';
+      card.innerHTML = `
+        <span class="shop-team-card-icon">${icon}</span>
+        <div class="shop-team-card-info">
+          <div class="shop-team-card-name">${escapeHtml(bee.name)}</div>
+          <div class="shop-team-card-type">${bee.hiredType || 'worker'}</div>
+        </div>
+        <button class="shop-team-card-fire" data-fire-id="${bee.id}">Fire</button>
+      `;
+      card.querySelector('.shop-team-card-fire').addEventListener('click', () => fireTeamBee(bee.id));
+      rosterEl.appendChild(card);
+    }
+  }
+
+  // Hire grid
+  const hireEl = document.getElementById('shop-team-hire');
+  if (hireEl) {
+    hireEl.innerHTML = '';
+    for (const opt of HIRE_OPTIONS) {
+      const canAfford = honey >= opt.cost;
+      const atMax = teamCount >= 8;
+      const card = document.createElement('div');
+      card.className = 'shop-card' + (!canAfford || atMax ? ' disabled' : '');
+      card.innerHTML = `
+        <div class="shop-card-preview" style="background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:18px">${opt.icon}</div>
+        <div class="shop-card-name">${opt.label}</div>
+        <div class="shop-card-desc">${HIRE_DESCRIPTIONS[opt.type] || ''}</div>
+        <button class="shop-card-btn buy" ${canAfford && !atMax ? '' : 'disabled'}>${opt.cost} \uD83C\uDF6F</button>
+      `;
+      if (canAfford && !atMax) {
+        card.querySelector('.shop-card-btn').addEventListener('click', () => hireBee(opt.type));
+      }
+      hireEl.appendChild(card);
+    }
+  }
+}
+
+async function fireTeamBee(id) {
+  try {
+    const res = await fetch('/api/team/fire', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json();
+    if (data.error) console.warn('[fire]', data.error);
+    else lastTeamKey = ''; // force re-render
+  } catch (err) {
+    console.error('[fire] Failed:', err);
+  }
+}
+
 function showHoneyEarned(amount) {
   const el = document.createElement('div');
   el.className = 'honey-float';
@@ -4644,6 +5218,478 @@ function showHoneyEarned(amount) {
   }
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 1500);
+}
+
+// ============================================================================
+// Recruiter Menu — Sims-style hire panel
+// ============================================================================
+
+const HIRE_DESCRIPTIONS = {
+  developer:  'Codes at Studio desks',
+  designer:   'Creates in the Studio',
+  researcher: 'Reads in the Library',
+  devops:     'Monitors the Server Room',
+  manager:    'Plans in the Conference Room',
+};
+
+function openRecruiterMenu(recruiterBee) {
+  const menuEl = document.getElementById('recruiter-menu');
+  if (!menuEl) return;
+
+  recruiterMenuOpen = true;
+  menuEl.classList.remove('hidden');
+
+  // Position near recruiter's screen position
+  const rect = app.canvas.getBoundingClientRect();
+  const scaleX = rect.width / CANVAS_W;
+  const scaleY = rect.height / CANVAS_H;
+  const screenX = rect.left + (recruiterBee.drawX * camera.zoom + camera.x) * scaleX;
+  const screenY = rect.top + (recruiterBee.drawY * camera.zoom + camera.y) * scaleY;
+  menuEl.style.left = `${Math.max(10, Math.min(screenX - 130, window.innerWidth - 280))}px`;
+  menuEl.style.top = `${Math.max(10, Math.min(screenY - 320, window.innerHeight - 350))}px`;
+
+  // Update footer
+  const honey = officeState?.shop?.honey || 0;
+  const teamCount = (officeState?.bees || []).filter(b => b.role === 'hired').length;
+  setText('recruiter-honey', honey);
+  setText('recruiter-team-count', teamCount);
+
+  // Populate options
+  const optionsEl = document.getElementById('recruiter-menu-options');
+  if (!optionsEl) return;
+  optionsEl.innerHTML = '';
+
+  for (const opt of HIRE_OPTIONS) {
+    const canAfford = honey >= opt.cost;
+    const div = document.createElement('div');
+    div.className = 'hire-option' + (canAfford ? '' : ' disabled');
+    div.innerHTML = `
+      <span class="hire-option-icon">${opt.icon}</span>
+      <div class="hire-option-info">
+        <div class="hire-option-name">${opt.label}</div>
+        <div class="hire-option-desc">${HIRE_DESCRIPTIONS[opt.type] || ''}</div>
+      </div>
+      <span class="hire-option-cost">${opt.cost} &#x1F36F;</span>
+    `;
+    if (canAfford) {
+      div.addEventListener('click', () => hireBee(opt.type));
+    }
+    optionsEl.appendChild(div);
+  }
+}
+
+function closeRecruiterMenu() {
+  recruiterMenuOpen = false;
+  const menuEl = document.getElementById('recruiter-menu');
+  if (menuEl) menuEl.classList.add('hidden');
+}
+
+async function hireBee(type) {
+  try {
+    const res = await fetch('/api/team/hire', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      console.warn('[hire]', data.error);
+    } else {
+      console.log('[hire] Hired:', data.bee?.name);
+    }
+  } catch (err) {
+    console.error('[hire] Failed:', err);
+  }
+  closeRecruiterMenu();
+}
+
+// Close recruiter menu on click outside or Escape
+document.addEventListener('click', (e) => {
+  if (!recruiterMenuOpen) return;
+  const menu = document.getElementById('recruiter-menu');
+  if (menu && !menu.contains(e.target)) {
+    closeRecruiterMenu();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && recruiterMenuOpen) {
+    closeRecruiterMenu();
+  }
+});
+
+// Close button
+document.getElementById('recruiter-menu-close')?.addEventListener('click', closeRecruiterMenu);
+
+// ============================================================================
+// Team Management Icons — Role icon + status dot above each bee
+// ============================================================================
+
+const ROLE_COLORS = {
+  queen: 0xfbbf24,
+  recruiter: 0xef4444,
+  hired: 0x4ade80,
+  worker: 0x60a5fa,
+};
+
+const HIRED_TYPE_ICONS = {
+  developer: '\u{1F4BB}',
+  designer: '\u{1F3A8}',
+  manager: '\u{1F4CA}',
+  researcher: '\u{1F52C}',
+  devops: '\u26A1',
+};
+
+function updateTeamIcons() {
+  const allBees = Object.values(localBees);
+  for (const bee of allBees) {
+    if (!bee.gfx) continue;
+    const s = bee.gfx._beeScale || 0.65;
+
+    // Status dot (activity indicator)
+    if (!bee.gfx._statusDot) {
+      const dot = new Graphics();
+      dot.circle(0, 0, 4).fill(0x4ade80);
+      dot.y = -58 * s;
+      dot.x = 12 * s;
+      bee.gfx.addChild(dot);
+      bee.gfx._statusDot = dot;
+    }
+
+    // Update status dot color based on activity
+    const dot = bee.gfx._statusDot;
+    dot.clear();
+    let dotColor = 0x4ade80; // green = active/idle
+    if (bee.activity === 'thinking' || bee.activity === 'searching') dotColor = 0xfbbf24; // yellow
+    else if (bee.activity === 'coding' || bee.activity === 'running-command') dotColor = 0x3b82f6; // blue
+    else if (bee.activity === 'presenting' || bee.activity === 'celebrating') dotColor = 0xa855f7; // purple
+    dot.circle(0, 0, 3.5).fill(dotColor);
+    // Glow
+    dot.circle(0, 0, 6).fill({ color: dotColor, alpha: 0.2 });
+
+    // Role icon text (rendered once)
+    if (!bee.gfx._roleIconText) {
+      const roleText = bee.role === 'hired'
+        ? (HIRED_TYPE_ICONS[bee.hiredType] || '\u{1F41D}')
+        : bee.role === 'queen' ? '\u{1F451}' : bee.role === 'recruiter' ? '\u{1F4CB}' : '\u{1F527}';
+      const icon = new Text({
+        text: roleText,
+        style: new TextStyle({ fontSize: 10, fill: 0xffffff }),
+      });
+      icon.anchor.set(0.5, 0.5);
+      icon.y = -58 * s;
+      icon.x = -4 * s;
+      bee.gfx.addChild(icon);
+      bee.gfx._roleIconText = icon;
+    }
+  }
+}
+
+// ============================================================================
+// Team Portrait Dock — Sims-style vertical strip on right edge
+// ============================================================================
+
+const ALL_ASSIGNABLE_TOOLS = [
+  { id: 'Read',         label: 'Read',     icon: '\u{1F4D6}' },
+  { id: 'Edit',         label: 'Edit',     icon: '\u270F\uFE0F' },
+  { id: 'Write',        label: 'Write',    icon: '\u{1F4DD}' },
+  { id: 'Glob',         label: 'Glob',     icon: '\u{1F50D}' },
+  { id: 'Grep',         label: 'Grep',     icon: '\u{1F50E}' },
+  { id: 'Bash',         label: 'Bash',     icon: '\u26A1' },
+  { id: 'WebFetch',     label: 'Web',      icon: '\u{1F310}' },
+  { id: 'WebSearch',    label: 'Search',   icon: '\u{1F50D}' },
+  { id: 'Task',         label: 'Task',     icon: '\u{1F41D}' },
+  { id: 'Skill',        label: 'Skill',    icon: '\u2699\uFE0F' },
+  { id: 'NotebookEdit', label: 'Notebook', icon: '\u{1F4D3}' },
+  { id: 'EnterPlanMode', label: 'Plan',    icon: '\u{1F4CB}' },
+  { id: 'ExitPlanMode', label: 'EndPlan',  icon: '\u{1F4CB}' },
+  { id: 'AskUserQuestion', label: 'Ask',   icon: '\u{1F4AC}' },
+  { id: 'TaskCreate',   label: 'TaskNew',  icon: '\u{1F4DD}' },
+  { id: 'TaskUpdate',   label: 'TaskUpd',  icon: '\u{1F4DD}' },
+  { id: 'TaskList',     label: 'TaskList', icon: '\u{1F4DD}' },
+];
+
+const BEE_COLOR_PRESETS = [
+  '#22C55E', '#8B5CF6', '#3B82F6', '#06B6D4', '#F97316',
+  '#EF4444', '#EC4899', '#F59E0B', '#10B981', '#6366F1',
+];
+
+let teamDockSelectedId = null;
+let lastTeamDockKey = '';
+
+/** Generate inline SVG bee face for a portrait */
+function beePortraitSVG(color, activity) {
+  // Darken helper for stripes
+  const r = parseInt(color.slice(1,3),16), g = parseInt(color.slice(3,5),16), b = parseInt(color.slice(5,7),16);
+  const dk = (v,f) => Math.round(v * f).toString(16).padStart(2,'0');
+  const dark = `#${dk(r,0.55)}${dk(g,0.55)}${dk(b,0.55)}`;
+  const light = `#${dk(Math.min(255,r+60),1)}${dk(Math.min(255,g+60),1)}${dk(Math.min(255,b+60),1)}`;
+
+  // Expression based on activity
+  let eyeL, eyeR, mouth;
+  if (activity === 'coding' || activity === 'running-command' || activity === 'searching') {
+    // focused — slightly narrowed
+    eyeL = `<ellipse cx="13" cy="16" rx="3.5" ry="3" fill="white"/><ellipse cx="13" cy="16.5" rx="2.2" ry="2" fill="#1a1a1a"/><circle cx="14" cy="15.5" r="1" fill="white"/>`;
+    eyeR = `<ellipse cx="23" cy="16" rx="3.5" ry="3" fill="white"/><ellipse cx="23" cy="16.5" rx="2.2" ry="2" fill="#1a1a1a"/><circle cx="24" cy="15.5" r="1" fill="white"/>`;
+    mouth = `<line x1="16" y1="22" x2="20" y2="22" stroke="#78716c" stroke-width="1" stroke-linecap="round"/>`;
+  } else if (activity === 'celebrating' || activity === 'presenting') {
+    // happy — big eyes, smile
+    eyeL = `<ellipse cx="13" cy="15.5" rx="3.8" ry="4" fill="white"/><ellipse cx="13" cy="16" rx="2.8" ry="3" fill="#1a1a1a"/><circle cx="14.2" cy="14.5" r="1.2" fill="white"/>`;
+    eyeR = `<ellipse cx="23" cy="15.5" rx="3.8" ry="4" fill="white"/><ellipse cx="23" cy="16" rx="2.8" ry="3" fill="#1a1a1a"/><circle cx="24.2" cy="14.5" r="1.2" fill="white"/>`;
+    mouth = `<path d="M15 21.5 Q18 25 21 21.5" stroke="#78716c" stroke-width="1.2" fill="none" stroke-linecap="round"/>`;
+  } else if (activity === 'thinking') {
+    // pensive — eyes looking up-right
+    eyeL = `<ellipse cx="13" cy="15.5" rx="3.5" ry="3.5" fill="white"/><ellipse cx="14.5" cy="14.5" rx="2" ry="2" fill="#1a1a1a"/><circle cx="15" cy="13.8" r="1" fill="white"/>`;
+    eyeR = `<ellipse cx="23" cy="15.5" rx="3.5" ry="3.5" fill="white"/><ellipse cx="24.5" cy="14.5" rx="2" ry="2" fill="#1a1a1a"/><circle cx="25" cy="13.8" r="1" fill="white"/>`;
+    mouth = `<ellipse cx="18" cy="22.5" rx="1.5" ry="1.8" fill="#78716c"/>`;
+  } else if (activity === 'idle' || activity === 'drinking-coffee' || activity === 'chatting') {
+    // relaxed neutral — soft eyes, gentle smile
+    eyeL = `<ellipse cx="13" cy="16" rx="3.5" ry="3.5" fill="white"/><ellipse cx="13" cy="16.5" rx="2.5" ry="2.5" fill="#1a1a1a"/><circle cx="14" cy="15" r="1.2" fill="white"/>`;
+    eyeR = `<ellipse cx="23" cy="16" rx="3.5" ry="3.5" fill="white"/><ellipse cx="23" cy="16.5" rx="2.5" ry="2.5" fill="#1a1a1a"/><circle cx="24" cy="15" r="1.2" fill="white"/>`;
+    mouth = `<path d="M15.5 22 Q18 24 20.5 22" stroke="#78716c" stroke-width="1" fill="none" stroke-linecap="round"/>`;
+  } else {
+    // default neutral
+    eyeL = `<ellipse cx="13" cy="16" rx="3.5" ry="3.5" fill="white"/><ellipse cx="13" cy="16.5" rx="2.5" ry="2.5" fill="#1a1a1a"/><circle cx="14" cy="15" r="1.2" fill="white"/>`;
+    eyeR = `<ellipse cx="23" cy="16" rx="3.5" ry="3.5" fill="white"/><ellipse cx="23" cy="16.5" rx="2.5" ry="2.5" fill="#1a1a1a"/><circle cx="24" cy="15" r="1.2" fill="white"/>`;
+    mouth = `<path d="M15.5 22 Q18 23.5 20.5 22" stroke="#78716c" stroke-width="1" fill="none" stroke-linecap="round"/>`;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36">
+    <!-- Body peek at bottom -->
+    <ellipse cx="18" cy="34" rx="10" ry="6" fill="${color}"/>
+    <ellipse cx="18" cy="34" rx="10" ry="6" stroke="${dark}" stroke-width="0.6" fill="none"/>
+    <ellipse cx="18" cy="32" rx="9" ry="1.5" fill="${dark}" opacity="0.5"/>
+    <ellipse cx="18" cy="36" rx="8" ry="1.2" fill="${dark}" opacity="0.5"/>
+    <!-- Wings hint -->
+    <ellipse cx="6" cy="28" rx="7" ry="4" fill="#dbeafe" opacity="0.35" transform="rotate(-20 6 28)"/>
+    <ellipse cx="30" cy="28" rx="7" ry="4" fill="#dbeafe" opacity="0.35" transform="rotate(20 30 28)"/>
+    <!-- Head -->
+    <circle cx="18" cy="17" r="12" fill="#fef9c3"/>
+    <circle cx="18" cy="17" r="12" stroke="#C8B888" stroke-width="0.7" fill="none"/>
+    <!-- Head sheen -->
+    <ellipse cx="14" cy="12" rx="5" ry="3.5" fill="white" opacity="0.15"/>
+    <!-- Antennae -->
+    <path d="M14 6 Q10 -1 12 -2" stroke="#5C4A32" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+    <circle cx="12" cy="-2" r="2.2" fill="${color}" stroke="${dark}" stroke-width="0.5"/>
+    <path d="M22 6 Q26 -1 24 -2" stroke="#5C4A32" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+    <circle cx="24" cy="-2" r="2.2" fill="${color}" stroke="${dark}" stroke-width="0.5"/>
+    <!-- Cheeks -->
+    <ellipse cx="8" cy="20" rx="3" ry="1.8" fill="#fca5a5" opacity="0.3"/>
+    <ellipse cx="28" cy="20" rx="3" ry="1.8" fill="#fca5a5" opacity="0.3"/>
+    <!-- Eyes + Mouth -->
+    ${eyeL}${eyeR}${mouth}
+  </svg>`;
+}
+
+function renderTeamDock(bees) {
+  if (!bees) return;
+  const hiredBees = bees.filter(b => b.role === 'hired');
+
+  // Don't re-render dock while a panel is open (panel lives on body, dock rebuild would lose selected highlight timing)
+  if (teamDockSelectedId && document.querySelector('.team-panel')) {
+    // Just update status dots on existing portraits
+    const dock = document.getElementById('team-dock');
+    if (dock) {
+      const portraits = dock.querySelectorAll('.team-portrait');
+      portraits.forEach((p, i) => {
+        if (i < hiredBees.length) {
+          const dot = p.querySelector('.team-portrait-status');
+          if (dot) dot.className = 'team-portrait-status ' + activityToStatusClass(hiredBees[i].activity);
+        }
+      });
+    }
+    return;
+  }
+
+  // Fingerprint to skip no-op re-renders
+  const key = hiredBees.map(b => `${b.id}:${b.name}:${b.color}:${b.activity}:${(b.hiredTools||[]).join(',')}`).join('|');
+  if (key === lastTeamDockKey && document.getElementById('team-dock')?.childElementCount > 0) return;
+  lastTeamDockKey = key;
+
+  const dock = document.getElementById('team-dock');
+  if (!dock) return;
+  dock.innerHTML = '';
+
+  if (hiredBees.length === 0) return;
+
+  for (const bee of hiredBees) {
+    const portrait = document.createElement('div');
+    portrait.className = 'team-portrait' + (teamDockSelectedId === bee.id ? ' selected' : '');
+    portrait.dataset.beeId = bee.id;
+    portrait.title = `${bee.name} (${bee.hiredType || 'worker'})`;
+
+    // SVG bee face
+    portrait.innerHTML = `
+      ${beePortraitSVG(bee.color || '#22C55E', bee.activity)}
+      <span class="team-portrait-status ${activityToStatusClass(bee.activity)}"></span>
+    `;
+
+    portrait.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (teamDockSelectedId === bee.id) {
+        teamDockSelectedId = null;
+        closeTeamPanel();
+        lastTeamDockKey = '';
+        renderTeamDock(officeState?.bees || bees);
+      } else {
+        teamDockSelectedId = bee.id;
+        // Update selected state on portraits
+        dock.querySelectorAll('.team-portrait').forEach(p => p.classList.remove('selected'));
+        portrait.classList.add('selected');
+        openTeamPanel(bee, portrait);
+      }
+    });
+
+    dock.appendChild(portrait);
+  }
+}
+
+function activityToStatusClass(activity) {
+  if (activity === 'coding' || activity === 'running-command' || activity === 'browsing' || activity === 'reading' || activity === 'searching') return 'working';
+  if (activity === 'thinking' || activity === 'presenting') return 'thinking';
+  return '';
+}
+
+function closeTeamPanel() {
+  const existing = document.querySelector('.team-panel');
+  if (existing) existing.remove();
+  teamDockSelectedId = null;
+}
+
+function openTeamPanel(bee, portraitEl) {
+  closeTeamPanel();
+  teamDockSelectedId = bee.id;
+
+  const icon = HIRED_TYPE_ICONS[bee.hiredType] || '\u{1F41D}';
+  const currentTools = bee.hiredTools || [];
+
+  const panel = document.createElement('div');
+  panel.className = 'team-panel';
+
+  // Position panel fixed on screen, to the left of the portrait
+  const rect = portraitEl.getBoundingClientRect();
+  panel.style.position = 'fixed';
+  panel.style.right = (window.innerWidth - rect.left + 8) + 'px';
+  // Center vertically on the portrait, but clamp to viewport
+  const panelH = 420; // approximate
+  let top = rect.top + rect.height / 2 - panelH / 2;
+  top = Math.max(8, Math.min(top, window.innerHeight - panelH - 8));
+  panel.style.top = top + 'px';
+  panel.style.transform = 'none';
+
+  // Build color swatches
+  const swatchesHtml = BEE_COLOR_PRESETS.map(c =>
+    `<div class="team-color-swatch ${c.toLowerCase() === (bee.color || '').toLowerCase() ? 'active' : ''}" data-color="${c}" style="background:${c}"></div>`
+  ).join('');
+
+  // Build tool chips
+  const toolChipsHtml = ALL_ASSIGNABLE_TOOLS.map(t =>
+    `<span class="team-tool-chip ${currentTools.includes(t.id) ? 'active' : ''}" data-tool="${t.id}">${t.icon} ${t.label}</span>`
+  ).join('');
+
+  // Large portrait preview at top of panel
+  const previewSVG = beePortraitSVG(bee.color || '#22C55E', bee.activity)
+    .replace('width="36" height="36"', 'width="52" height="52"');
+
+  panel.innerHTML = `
+    <div class="team-panel-header">
+      <div class="team-panel-preview">${previewSVG}</div>
+      <div>
+        <div class="team-panel-bee-name">${escapeHtml(bee.name)}</div>
+        <div class="team-panel-type">${bee.hiredType || 'worker'}</div>
+      </div>
+    </div>
+    <div class="team-panel-label">Name</div>
+    <input class="team-panel-name-input" type="text" maxlength="20" value="${escapeHtml(bee.name)}" />
+    <div class="team-panel-label">Color</div>
+    <div class="team-panel-colors">${swatchesHtml}</div>
+    <div class="team-panel-label">Tools</div>
+    <div class="team-panel-tools">${toolChipsHtml}</div>
+    <div class="team-panel-actions">
+      <button class="team-panel-save">Save</button>
+      <button class="team-panel-fire">Fire</button>
+    </div>
+  `;
+
+  // Wire color swatches — also live-update the preview SVG
+  let selectedColor = bee.color;
+  panel.querySelectorAll('.team-color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      panel.querySelectorAll('.team-color-swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+      selectedColor = sw.dataset.color;
+      // Live preview
+      const preview = panel.querySelector('.team-panel-preview');
+      if (preview) {
+        preview.innerHTML = beePortraitSVG(selectedColor, bee.activity)
+          .replace('width="36" height="36"', 'width="52" height="52"');
+      }
+    });
+  });
+
+  // Wire tool chips (toggle)
+  const selectedTools = new Set(currentTools);
+  panel.querySelectorAll('.team-tool-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const toolId = chip.dataset.tool;
+      if (selectedTools.has(toolId)) {
+        selectedTools.delete(toolId);
+        chip.classList.remove('active');
+      } else {
+        selectedTools.add(toolId);
+        chip.classList.add('active');
+      }
+    });
+  });
+
+  // Save button
+  panel.querySelector('.team-panel-save').addEventListener('click', async () => {
+    const nameInput = panel.querySelector('.team-panel-name-input');
+    const newName = nameInput.value.trim();
+    try {
+      const res = await fetch('/api/team/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: bee.id,
+          name: newName || undefined,
+          customColor: selectedColor || undefined,
+          customTools: Array.from(selectedTools),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        console.warn('[team-update]', data.error);
+      } else {
+        closeTeamPanel();
+        lastTeamDockKey = '';
+        lastTeamKey = '';
+      }
+    } catch (err) {
+      console.error('[team-update] Failed:', err);
+    }
+  });
+
+  // Fire button
+  panel.querySelector('.team-panel-fire').addEventListener('click', async () => {
+    if (!confirm(`Fire ${bee.name}? This cannot be undone.`)) return;
+    await fireTeamBee(bee.id);
+    closeTeamPanel();
+    lastTeamDockKey = '';
+  });
+
+  // Close panel when clicking outside
+  const closeOnOutside = (e) => {
+    if (!panel.contains(e.target) && !e.target.closest('.team-portrait')) {
+      closeTeamPanel();
+      lastTeamDockKey = '';
+      if (officeState) renderTeamDock(officeState.bees);
+      document.removeEventListener('mousedown', closeOnOutside);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', closeOnOutside), 0);
+
+  // Append to body so it survives dock re-renders
+  document.body.appendChild(panel);
 }
 
 // --- Start ---

@@ -11,7 +11,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
-import type { OfficeState, WSMessage, OnboardingConfig } from './types.js';
+import type { OfficeState, WSMessage, OnboardingConfig, HiredBeeType } from './types.js';
 import { Voice } from './voice.js';
 import { Relay, CLEARLY_RELAY_URL } from './relay.js';
 import { Office } from './office.js';
@@ -72,14 +72,9 @@ export class Server {
 
     // ---- Onboarding Routes ----
 
-    // Root: serve onboarding or office based on config
-    this.app.get('/', (req, res) => {
-      const config = loadOnboardingConfig();
-      if (config.onboarded) {
-        res.sendFile(join(publicDir, 'index.html'));
-      } else {
-        res.sendFile(join(publicDir, 'onboarding.html'));
-      }
+    // Root: always serve the office UI (PIN screen handles first-time setup)
+    this.app.get('/', (_req, res) => {
+      res.sendFile(join(publicDir, 'index.html'));
     });
 
     // Auth callback: receives token from Clearly OAuth redirect
@@ -91,7 +86,7 @@ export class Server {
       }
 
       saveOnboardingConfig({ token, endpoint: CLEARLY_RELAY_URL });
-      res.redirect(`/onboarding.html?step=4&token=${encodeURIComponent(token)}`);
+      res.redirect(`/?linked=true`);
     });
 
     // API: Get current status
@@ -221,6 +216,104 @@ export class Server {
         return;
       }
       saveOnboardingConfig({ pinHash });
+      res.json({ ok: true });
+    });
+
+    // ---- Team Management Routes ----
+
+    // GET /api/team — Current team roster
+    this.app.get('/api/team', (_req, res) => {
+      if (!this.office) {
+        res.json({ team: [], honey: 0, officeLevel: 1, maxBees: 8 });
+        return;
+      }
+      const state = this.office.getState();
+      res.json({
+        team: this.office.getTeam(),
+        honey: state.shop.honey,
+        officeLevel: state.officeLevel,
+        maxBees: 8,
+      });
+    });
+
+    // POST /api/team/hire — Hire a new bee
+    this.app.post('/api/team/hire', (req, res) => {
+      const { type } = req.body;
+      const validTypes: HiredBeeType[] = ['developer', 'designer', 'manager', 'researcher', 'devops'];
+      if (!type || !validTypes.includes(type)) {
+        res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` });
+        return;
+      }
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+
+      const result = this.office.hireBee(type);
+      if (typeof result === 'string') {
+        res.status(400).json({ error: result });
+        return;
+      }
+
+      // Persist team + shop to config
+      saveOnboardingConfig({
+        team: this.office.getTeam(),
+        shop: this.office.shopPersistData(),
+      });
+      this.broadcastState(this.office.getState());
+
+      res.json({ ok: true, bee: result });
+    });
+
+    // POST /api/team/update — Update a hired bee's customization
+    this.app.post('/api/team/update', (req, res) => {
+      const { id, name, customTools, customColor } = req.body;
+      if (!id || typeof id !== 'string') {
+        res.status(400).json({ error: 'Missing bee id' });
+        return;
+      }
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+
+      const err = this.office.updateBee(id, { name, customTools, customColor });
+      if (err) {
+        res.status(400).json({ error: err });
+        return;
+      }
+
+      saveOnboardingConfig({
+        team: this.office.getTeam(),
+      });
+      this.broadcastState(this.office.getState());
+
+      res.json({ ok: true });
+    });
+
+    // POST /api/team/fire — Remove a hired bee
+    this.app.post('/api/team/fire', (req, res) => {
+      const { id } = req.body;
+      if (!id || typeof id !== 'string') {
+        res.status(400).json({ error: 'Missing bee id' });
+        return;
+      }
+      if (!this.office) {
+        res.status(500).json({ error: 'Office not initialized' });
+        return;
+      }
+
+      const err = this.office.fireBee(id);
+      if (err) {
+        res.status(400).json({ error: err });
+        return;
+      }
+
+      saveOnboardingConfig({
+        team: this.office.getTeam(),
+      });
+      this.broadcastState(this.office.getState());
+
       res.json({ ok: true });
     });
 

@@ -82,7 +82,11 @@
         <span class="shop-popover-title">Bee Shop</span>
         <button id="btn-shop-close" class="icon-btn icon-btn-sm">&times;</button>
       </div>
-      <div class="shop-popover-body">
+      <div class="shop-tabs">
+        <button class="shop-tab active" data-shop-tab="cosmetics">Cosmetics</button>
+        <button class="shop-tab" data-shop-tab="team">Team</button>
+      </div>
+      <div id="shop-cosmetics-panel" class="shop-popover-body">
         <div class="shop-balance">
           <span class="shop-balance-icon">&#x1F36F;</span>
           <span id="shop-honey" class="shop-balance-val">0</span>
@@ -92,6 +96,17 @@
         <div id="shop-skins" class="shop-grid"></div>
         <div class="shop-section-label">Accessories</div>
         <div id="shop-accessories" class="shop-grid"></div>
+      </div>
+      <div id="shop-team-panel" class="shop-popover-body hidden">
+        <div class="shop-balance">
+          <span class="shop-balance-icon">&#x1F36F;</span>
+          <span id="shop-team-honey" class="shop-balance-val">0</span>
+          <span class="shop-balance-label">honey</span>
+        </div>
+        <div class="shop-section-label">Your Team <span id="shop-team-count" class="shop-team-count">0/8</span></div>
+        <div id="shop-team-roster" class="shop-team-roster"></div>
+        <div class="shop-section-label">Hire</div>
+        <div id="shop-team-hire" class="shop-grid"></div>
       </div>
     </div>
     <div id="account-popover" class="account-popover hidden">
@@ -103,6 +118,28 @@
       </div>
     </div>
     <div id="office-viewport"></div>
+    <div id="team-dock" class="team-dock"></div>
+    <!-- Sims-style Recruiter Menu -->
+    <div id="recruiter-menu" class="recruiter-menu hidden">
+      <div class="recruiter-menu-header">
+        <span class="recruiter-menu-icon">&#x1F41D;</span>
+        <span class="recruiter-menu-title">Hire a Bee</span>
+        <button id="recruiter-menu-close" class="icon-btn icon-btn-sm">&times;</button>
+      </div>
+      <div id="recruiter-menu-options" class="recruiter-menu-options"></div>
+      <div class="recruiter-menu-footer">
+        <div class="recruiter-footer-stat">
+          <span>&#x1F36F;</span>
+          <span id="recruiter-honey">0</span>
+          <span class="recruiter-footer-label">honey</span>
+        </div>
+        <div class="recruiter-footer-stat">
+          <span>&#x1F465;</span>
+          <span id="recruiter-team-count">0</span>/<span id="recruiter-max-bees">8</span>
+          <span class="recruiter-footer-label">bees</span>
+        </div>
+      </div>
+    </div>
   </main>
 
   <div id="terminal-window" class="term-window">

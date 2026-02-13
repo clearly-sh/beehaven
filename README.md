@@ -8,41 +8,50 @@ Visualize Claude Code activity as an animated bee office. Watch your AI coding a
 npx @clearly/beehaven
 ```
 
-This starts the BeeHaven Office server and opens it in your browser at `http://localhost:3333`.
+That's it. BeeHaven starts a server at `http://localhost:3333`, auto-opens your browser, and auto-installs Claude Code hooks. Set a 4-digit PIN on first launch and you're in.
 
-## Setup
+Hooks are installed globally to `~/.claude/settings.json` so all Claude Code sessions emit events — no per-project setup needed. If you already have a Claude Code session running, restart it for hooks to take effect.
 
-Configure Claude Code hooks so BeeHaven can observe activity:
+## What You'll See
 
-```bash
-# In your project directory:
-npx @clearly/beehaven setup
-```
+A PixiJS WebGL office with 9 rooms. The queen bee represents your main Claude Code session. She moves between rooms based on what Claude is doing:
 
-This writes hook configuration to `.claude/settings.local.json` in your current directory. Restart Claude Code for hooks to take effect.
+| Activity | Room |
+|---|---|
+| Session starts/ends | Reception (lobby) |
+| Reading files (Read, Glob, Grep) | Library |
+| Editing files (Edit, Write) | Studio |
+| Running commands (Bash) | Server Room |
+| Web browsing (WebFetch, WebSearch) | Web Booth |
+| Thinking, planning, presenting (Task, Stop) | Conference Room |
+| Idle (8+ seconds) | Kitchen or Lounge |
+
+Worker bees spawn when Claude launches subagents and disappear when they finish. The terminal panel on the right shows Claude's responses and tool activity in real time.
+
+BeeHaven also scans `~/.claude/projects/` for active transcripts, so even sessions started before BeeHaven will appear.
 
 ## Features
 
 ### Free (no account needed)
 
-- Real-time animated office with PixiJS WebGL rendering
-- Bee characters that move between rooms based on Claude Code activity
-- Terminal panel showing Claude's responses
-- Activity log with tool calls, file reads/writes, commands
-- Multi-project support with building view
+- Real-time animated office with PixiJS v8 WebGL rendering
+- Bee characters that move between 9 rooms based on Claude Code activity
+- Terminal panel showing Claude's responses and tool activity
+- Activity log with timestamped events
+- Multi-project tabs (auto-detected from `~/.claude/projects/`)
 - Honey currency earned from coding activity
 - Bee shop with skins and accessories
 - HiDPI Retina display support
+- PIN-locked access screen
 
 ### With Clearly Account
 
 Link your [Clearly](https://clearly.sh) account to unlock:
 
-- Cloud relay — sync office state to the cloud
+- Cloud sync — project context, transcripts, and docs synced to Clearly
 - Shared team visualization — see teammates' offices
 - Synced bee skins across devices
 - Voice narration (ElevenLabs TTS)
-- Usage analytics
 
 ```bash
 npx @clearly/beehaven login
@@ -55,7 +64,8 @@ beehaven [command] [options]
 
 Commands:
   start          Start the office server (default)
-  setup          Configure Claude Code hooks for current project
+  setup          Re-install Claude Code hooks (auto-installed on startup)
+  uninstall      Remove all BeeHaven hooks from ~/.claude/settings.json
   login          Link your Clearly account
   logout         Unlink your Clearly account
 
@@ -70,30 +80,15 @@ Options:
 ## How It Works
 
 ```
-Claude Code hooks --> /tmp/beehaven-events.jsonl --> Watcher --> Office State --> WebSocket --> PixiJS Canvas
+Claude Code hooks → /tmp/beehaven-events.jsonl → Watcher → Office State → WebSocket → PixiJS Canvas
 ```
 
-1. **Hooks**: A shell script receives events from Claude Code and appends them to a JSONL file
-2. **Watcher**: Polls the JSONL file for new events using chokidar
-3. **Office**: State machine maps events to bee positions and activities across 8 rooms
+1. **Hooks**: On startup, BeeHaven writes hooks to `~/.claude/settings.json`. A shell script receives events from Claude Code and appends timestamped JSONL to `/tmp/beehaven-events.jsonl`
+2. **Watcher**: Polls the JSONL file for new events using chokidar (100ms interval)
+3. **Office**: State machine maps events to bee positions and activities across 9 rooms
 4. **Server**: Express + WebSocket pushes state updates at 2Hz to connected browsers
 5. **Canvas**: PixiJS v8 renders the animated office with A\* pathfinding, sliding doors, elevator, and dynamic bee expressions
-
-### Hook Events
-
-| Event | Bee Behavior |
-|---|---|
-| `SessionStart` | Queen arrives in lobby |
-| `UserPromptSubmit` | Queen moves to meeting room |
-| `PreToolUse` (Read/Grep) | Queen moves to team office |
-| `PreToolUse` (Edit/Write) | Queen moves to team office |
-| `PreToolUse` (Bash) | Queen moves to server closet |
-| `PostToolUse` | Activity complete indicator |
-| `PostToolUseFailure` | Error state, queen rethinks |
-| `Stop` | Queen presents results in meeting room |
-| `SubagentStart` | Worker bee spawns |
-| `SubagentStop` | Worker bee celebrates |
-| `SessionEnd` | Queen returns to lobby |
+6. **Transcript Scanner**: Every 3 seconds, scans `~/.claude/projects/` for recently-modified transcript files to discover sessions even without hooks
 
 ## Environment Variables
 

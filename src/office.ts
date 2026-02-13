@@ -9,6 +9,8 @@ import type {
   CityProjectState,
   ClaudeEvent,
   EventLogEntry,
+  HiredBee,
+  HiredBeeType,
   OfficeState,
   OfficeStats,
   ProjectSyncData,
@@ -70,7 +72,17 @@ function toolToRoom(toolName: string): Room {
     case 'Bash':
       return 'server-room';
     case 'Task':
+    case 'EnterPlanMode':
+    case 'ExitPlanMode':
+    case 'AskUserQuestion':
       return 'meeting-room';
+    case 'TodoWrite':
+    case 'TaskCreate':
+    case 'TaskUpdate':
+    case 'TaskList':
+      return 'meeting-room';
+    case 'Skill':
+      return 'studio';
     default:
       return 'studio';
   }
@@ -84,16 +96,28 @@ function toolToActivity(toolName: string): BeeActivity {
     case 'NotebookEdit':
       return 'coding';
     case 'Read':
+      return 'reading';
     case 'Glob':
     case 'Grep':
-      return 'reading';
+      return 'searching';
     case 'Bash':
       return 'running-command';
     case 'Task':
+    case 'EnterPlanMode':
       return 'thinking';
+    case 'ExitPlanMode':
+    case 'AskUserQuestion':
+      return 'presenting';
     case 'WebFetch':
     case 'WebSearch':
       return 'browsing';
+    case 'TodoWrite':
+    case 'TaskCreate':
+    case 'TaskUpdate':
+    case 'TaskList':
+      return 'thinking';
+    case 'Skill':
+      return 'coding';
     default:
       return 'coding';
   }
@@ -103,27 +127,85 @@ function toolToActivity(toolName: string): BeeActivity {
 function eventIcon(event: string, tool?: string): string {
   if (tool) {
     switch (tool) {
-      case 'Edit': case 'Write': return '✏️';
+      case 'Edit': case 'Write': case 'NotebookEdit': return '✏️';
       case 'Read': return '📖';
       case 'Glob': case 'Grep': return '🔍';
       case 'Bash': return '⚡';
       case 'Task': return '🐝';
       case 'WebFetch': case 'WebSearch': return '🌐';
+      case 'EnterPlanMode': case 'ExitPlanMode': return '📋';
+      case 'AskUserQuestion': return '💬';
+      case 'TodoWrite': case 'TaskCreate': case 'TaskUpdate': case 'TaskList': return '📝';
+      case 'Skill': return '⚙️';
       default: return '🔧';
     }
   }
   switch (event) {
     case 'SessionStart': return '🚪';
     case 'UserPromptSubmit': return '💬';
+    case 'PermissionRequest': return '🔐';
     case 'Stop': return '🎤';
     case 'SessionEnd': return '👋';
     case 'SubagentStart': return '🐝';
     case 'SubagentStop': return '✅';
+    case 'Notification': return '🔔';
+    case 'PreCompact': return '🗜️';
+    case 'TeammateIdle': return '💤';
+    case 'TaskCompleted': return '🏁';
     default: return '📋';
   }
 }
 
 const BEE_COLORS = ['#F59E0B', '#EF4444', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899'];
+
+/** Hired bee type definitions */
+const HIRED_BEE_CONFIG: Record<HiredBeeType, { homeRoom: Room; color: string; cost: number }> = {
+  developer:  { homeRoom: 'studio',       color: '#22C55E', cost: 50 },
+  designer:   { homeRoom: 'studio',       color: '#8B5CF6', cost: 75 },
+  manager:    { homeRoom: 'meeting-room', color: '#3B82F6', cost: 100 },
+  researcher: { homeRoom: 'library',      color: '#06B6D4', cost: 60 },
+  devops:     { homeRoom: 'server-room',  color: '#F97316', cost: 80 },
+};
+
+const BEE_NAMES: Record<HiredBeeType, string[]> = {
+  developer:  ['DevBee', 'StackBee', 'ByteBee', 'CodeBee', 'SyntaxBee', 'LogicBee', 'GitBee', 'NullBee'],
+  designer:   ['ArtBee', 'PixelBee', 'ColorBee', 'SketchBee', 'CanvasBee', 'PaletteBee'],
+  manager:    ['ChiefBee', 'PlanBee', 'BoardBee', 'SyncBee', 'OrgBee'],
+  researcher: ['DataBee', 'LabBee', 'ScanBee', 'SearchBee', 'InfoBee'],
+  devops:     ['OpsBee', 'PipeBee', 'DockerBee', 'CloudBee', 'ServerBee'],
+};
+
+const MAX_HIRED_BEES = 8;
+
+/** Which tools each hired bee type responds to */
+const HIRED_BEE_TOOLS: Record<HiredBeeType, string[]> = {
+  developer:  ['Edit', 'Write', 'NotebookEdit', 'Skill'],
+  designer:   ['Edit', 'Write'],
+  researcher: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
+  devops:     ['Bash'],
+  manager:    ['Task', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'TaskCreate', 'TaskUpdate', 'TaskList'],
+};
+
+/** Work room for each hired bee type */
+const HIRED_BEE_WORKROOM: Record<HiredBeeType, Room> = {
+  developer: 'studio',
+  designer: 'studio',
+  researcher: 'library',
+  devops: 'server-room',
+  manager: 'meeting-room',
+};
+
+/** Speech bubbles for hired bees when working */
+const HIRED_BEE_MESSAGES: Record<HiredBeeType, Record<string, string>> = {
+  developer:  { coding: 'Writing code...', default: 'On it!' },
+  designer:   { coding: 'Designing...', default: 'Creating!' },
+  researcher: { reading: 'Analyzing...', searching: 'Searching...', browsing: 'Researching...', default: 'Investigating!' },
+  devops:     { 'running-command': 'Running commands...', default: 'Deploying!' },
+  manager:    { thinking: 'Planning...', presenting: 'Presenting!', default: 'Organizing!' },
+};
+
+/** All room IDs (no progressive unlock — all rooms always visible) */
+const ALL_ROOMS: Room[] = ['lobby', 'studio', 'meeting-room', 'library', 'coffee', 'server-room', 'water-cooler', 'web-booth', 'phone-b'];
 
 export class Office {
   state: OfficeState;
@@ -137,39 +219,70 @@ export class Office {
   private static CONFIG_DIR = join(homedir(), '.beehaven');
   private static CONFIG_FILE = join(homedir(), '.beehaven', 'config.json');
 
-  constructor(shopData?: ShopPersistData) {
+  constructor(shopData?: ShopPersistData, teamData?: HiredBee[]) {
     const shop = loadShopState(shopData);
     const queenColor = getEquippedSkinColor(shop);
     const queenPos = roomCenter('lobby');
     const recruiterPos = roomCenter('meeting-room');
+    const hiredBees = teamData || [];
+
+    // Office level is cosmetic only (all rooms always unlocked)
+    const officeLevel = Office.calcOfficeLevel(hiredBees.length);
+    const unlockedRooms = ALL_ROOMS;
+
+    const bees: BeeCharacter[] = [
+      {
+        id: 'queen',
+        name: 'Claude',
+        role: 'queen',
+        room: 'lobby',
+        activity: 'idle',
+        x: queenPos.x,
+        y: queenPos.y,
+        targetX: queenPos.x,
+        targetY: queenPos.y,
+        color: queenColor,
+      },
+      {
+        id: 'recruiter',
+        name: 'Recruiter',
+        role: 'recruiter',
+        room: 'meeting-room',
+        activity: 'idle',
+        x: recruiterPos.x,
+        y: recruiterPos.y,
+        targetX: recruiterPos.x,
+        targetY: recruiterPos.y,
+        color: '#EC4899',
+        message: hiredBees.length === 0
+          ? 'Welcome! Click me to build your team'
+          : 'Need more help? Click me!',
+      },
+    ];
+
+    // Add hired bees
+    for (const hb of hiredBees) {
+      const config = HIRED_BEE_CONFIG[hb.type];
+      const room = config.homeRoom;
+      const pos = roomCenter(room);
+      bees.push({
+        id: hb.id,
+        name: hb.name,
+        role: 'hired',
+        room,
+        activity: 'idle',
+        x: pos.x,
+        y: pos.y,
+        targetX: pos.x,
+        targetY: pos.y,
+        color: hb.customColor || config.color,
+        hiredType: hb.type,
+        hiredTools: hb.customTools || HIRED_BEE_TOOLS[hb.type],
+      });
+    }
+
     this.state = {
-      bees: [
-        {
-          id: 'queen',
-          name: 'Claude',
-          role: 'queen',
-          room: 'lobby',
-          activity: 'idle',
-          x: queenPos.x,
-          y: queenPos.y,
-          targetX: queenPos.x,
-          targetY: queenPos.y,
-          color: queenColor,
-        },
-        {
-          id: 'recruiter',
-          name: 'Recruiter',
-          role: 'recruiter',
-          room: 'meeting-room',
-          activity: 'idle',
-          x: recruiterPos.x,
-          y: recruiterPos.y,
-          targetX: recruiterPos.x,
-          targetY: recruiterPos.y,
-          color: '#EC4899',
-          message: 'Ready to help you create bee agents!',
-        },
-      ],
+      bees,
       sessionActive: false,
       eventLog: [],
       stats: {
@@ -181,6 +294,8 @@ export class Office {
       },
       terminalLog: [],
       shop,
+      officeLevel,
+      unlockedRooms,
     };
 
     // Auto-detect projects on startup
@@ -334,7 +449,8 @@ export class Office {
         this.state.sessionActive = true;
         this.state.stats.sessionStartTime = event.timestamp;
         this.moveBee(queen, 'lobby', 'arriving');
-        queen.message = 'Good morning! Starting work...';
+        queen.message = project ? `Starting work on ${project}!` : 'Good morning! Ready to go';
+        this.mobilizeHiredBees();
         this.log('SessionStart', 'Session started', eventIcon('SessionStart'), project);
         speechText = 'Starting a new session. Let me see what we are working on.';
         break;
@@ -343,8 +459,8 @@ export class Office {
       case 'UserPromptSubmit': {
         this.moveBee(queen, 'meeting-room', 'thinking');
         const prompt = event.prompt || '';
-        const shortPrompt = prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt;
-        queen.message = `Hmm... "${shortPrompt}"`;
+        const shortPrompt = prompt.length > 50 ? prompt.slice(0, 50) + '...' : prompt;
+        queen.message = shortPrompt ? `"${shortPrompt}"` : 'Thinking...';
         this.log('UserPromptSubmit', shortPrompt, eventIcon('UserPromptSubmit'), project);
         speechText = `Let me think about this. ${shortPrompt}`;
         break;
@@ -358,20 +474,92 @@ export class Office {
         this.state.currentTool = tool;
         this.state.stats.toolCalls++;
 
+        // Build a natural, tool-specific message
         let detail = tool;
-        if (event.tool_input) {
-          if ('file_path' in event.tool_input) {
-            const fp = String(event.tool_input.file_path);
-            detail = `${tool}: ${fp.split('/').pop()}`;
-          } else if ('command' in event.tool_input) {
-            const cmd = String(event.tool_input.command);
-            detail = `${tool}: ${cmd.length > 40 ? cmd.slice(0, 40) + '...' : cmd}`;
-          } else if ('pattern' in event.tool_input) {
-            detail = `${tool}: ${event.tool_input.pattern}`;
+        let msg = tool;
+        const input = event.tool_input;
+        if (input) {
+          const fileName = 'file_path' in input ? String(input.file_path).split('/').pop() : '';
+          const cmd = 'command' in input ? String(input.command) : '';
+          const pattern = 'pattern' in input ? String(input.pattern) : '';
+          const query = 'query' in input ? String(input.query) : '';
+          const url = 'url' in input ? String(input.url) : '';
+
+          switch (tool) {
+            case 'Read':
+              msg = `Reading ${fileName || 'file'}...`;
+              detail = `Read: ${fileName}`;
+              break;
+            case 'Edit':
+              msg = `Editing ${fileName || 'file'}...`;
+              detail = `Edit: ${fileName}`;
+              break;
+            case 'Write':
+              msg = `Writing ${fileName || 'file'}...`;
+              detail = `Write: ${fileName}`;
+              break;
+            case 'NotebookEdit':
+              msg = `Editing notebook ${fileName || ''}...`;
+              detail = `NotebookEdit: ${fileName}`;
+              break;
+            case 'Grep':
+              msg = `Searching for "${pattern.length > 30 ? pattern.slice(0, 30) + '...' : pattern}"`;
+              detail = `Grep: ${pattern}`;
+              break;
+            case 'Glob':
+              msg = `Finding files: ${pattern.length > 30 ? pattern.slice(0, 30) + '...' : pattern}`;
+              detail = `Glob: ${pattern}`;
+              break;
+            case 'Bash': {
+              const shortCmd = cmd.length > 35 ? cmd.slice(0, 35) + '...' : cmd;
+              msg = `$ ${shortCmd}`;
+              detail = `Bash: ${shortCmd}`;
+              break;
+            }
+            case 'WebFetch':
+              msg = `Fetching ${url ? new URL(url).hostname : 'web page'}...`;
+              detail = `WebFetch: ${url}`;
+              break;
+            case 'WebSearch':
+              msg = `Searching: "${query.length > 30 ? query.slice(0, 30) + '...' : query}"`;
+              detail = `WebSearch: ${query}`;
+              break;
+            case 'Task':
+              msg = 'Delegating to a worker bee...';
+              detail = 'Task: spawning subagent';
+              break;
+            case 'EnterPlanMode':
+              msg = 'Planning my approach...';
+              detail = 'Planning';
+              break;
+            case 'ExitPlanMode':
+              msg = 'Plan ready for review!';
+              detail = 'Plan complete';
+              break;
+            case 'AskUserQuestion':
+              msg = 'Got a question for you...';
+              detail = 'Asking question';
+              break;
+            case 'TaskCreate':
+              msg = 'Creating a task...';
+              detail = 'TaskCreate';
+              break;
+            case 'TaskUpdate':
+              msg = 'Updating task status...';
+              detail = 'TaskUpdate';
+              break;
+            case 'Skill':
+              msg = 'Running skill...';
+              detail = 'Skill';
+              break;
+            default:
+              msg = `Using ${tool}...`;
+              detail = tool;
           }
         }
 
-        queen.message = detail;
+        queen.message = msg;
+        this.dispatchToHiredBees(tool, activity);
         this.log('PreToolUse', detail, eventIcon('PreToolUse', tool), project);
 
         // Update stats
@@ -383,7 +571,13 @@ export class Office {
 
       case 'PostToolUse': {
         const tool = event.tool_name || 'unknown';
-        queen.message = `Done: ${tool} ✓`;
+        const doneMessages: Record<string, string> = {
+          Read: 'Got it!', Edit: 'Changes saved!', Write: 'File written!',
+          Grep: 'Found results!', Glob: 'Files located!', Bash: 'Command done!',
+          WebFetch: 'Page loaded!', WebSearch: 'Results in!',
+        };
+        queen.message = doneMessages[tool] || `${tool} done ✓`;
+        this.idleHiredBees(doneMessages[tool] ? '✓ Done!' : undefined);
         this.log('PostToolUse', `${tool} completed`, eventIcon('PostToolUse', tool), project);
         break;
       }
@@ -392,7 +586,9 @@ export class Office {
         const tool = event.tool_name || 'unknown';
         this.state.stats.errors++;
         queen.activity = 'thinking';
-        queen.message = `${tool} failed! Rethinking...`;
+        const errMsg = event.error ? String(event.error).slice(0, 40) : '';
+        queen.message = errMsg ? `Hmm, ${tool} failed: ${errMsg}` : `${tool} failed — let me rethink`;
+        this.idleHiredBees('Hmm...');
         this.log('PostToolUseFailure', `${tool} error: ${event.error || 'unknown'}`, '❌', project);
         speechText = `Hmm, that didn't work. Let me try a different approach.`;
         break;
@@ -400,7 +596,8 @@ export class Office {
 
       case 'Stop': {
         this.moveBee(queen, 'meeting-room', 'presenting');
-        queen.message = 'Here are my results!';
+        queen.message = 'All done! Here you go';
+        this.idleHiredBees('Done!');
         this.log('Stop', 'Response complete', eventIcon('Stop'), project);
         break;
       }
@@ -449,12 +646,50 @@ export class Office {
         break;
       }
 
+      case 'PermissionRequest': {
+        const tool = event.tool_name || 'unknown';
+        queen.activity = 'thinking';
+        queen.message = `May I use ${tool}?`;
+        this.log('PermissionRequest', `Permission needed: ${tool}`, eventIcon('PermissionRequest'), project);
+        break;
+      }
+
+      case 'Notification': {
+        const msg = event.message || event.notification_type || 'notification';
+        const shortMsg = msg.length > 60 ? msg.slice(0, 60) + '...' : msg;
+        queen.message = shortMsg;
+        this.log('Notification', shortMsg, eventIcon('Notification'), project);
+        break;
+      }
+
+      case 'PreCompact': {
+        const trigger = event.trigger || 'auto';
+        queen.message = 'Tidying up my memory...';
+        this.log('PreCompact', `Context compaction (${trigger})`, eventIcon('PreCompact'), project);
+        break;
+      }
+
+      case 'TeammateIdle': {
+        const teammate = event.teammate_name || 'teammate';
+        this.log('TeammateIdle', `${teammate} is idle`, eventIcon('TeammateIdle'), project);
+        break;
+      }
+
+      case 'TaskCompleted': {
+        const subject = event.task_subject || 'task';
+        const shortSubject = subject.length > 50 ? subject.slice(0, 50) + '...' : subject;
+        queen.message = `Finished: ${shortSubject}`;
+        this.log('TaskCompleted', shortSubject, eventIcon('TaskCompleted'), project);
+        break;
+      }
+
       case 'SessionEnd': {
         this.activeSessions.delete(event.session_id);
         this.refreshActiveProjects();
         this.state.sessionActive = this.activeSessions.size > 0;
         this.moveBee(queen, 'lobby', 'idle');
         queen.message = 'See you next time!';
+        this.idleHiredBees('Break time!');
         this.log('SessionEnd', 'Session ended', eventIcon('SessionEnd'), project);
         speechText = 'Session complete. See you next time!';
         break;
@@ -480,6 +715,39 @@ export class Office {
     bee.targetY = pos.y;
   }
 
+  /** Dispatch a tool event to matching hired bees */
+  private dispatchToHiredBees(tool: string, activity: BeeActivity) {
+    for (const bee of this.state.bees) {
+      if (bee.role !== 'hired' || !bee.hiredType) continue;
+      const tools = bee.hiredTools || HIRED_BEE_TOOLS[bee.hiredType] || [];
+      if (!tools.includes(tool)) continue;
+
+      const workRoom = HIRED_BEE_WORKROOM[bee.hiredType];
+      this.moveBee(bee, workRoom, activity);
+      const msgs = HIRED_BEE_MESSAGES[bee.hiredType];
+      bee.message = msgs[activity] || msgs.default || 'Working...';
+    }
+  }
+
+  /** Return all hired bees to idle */
+  private idleHiredBees(message?: string) {
+    for (const bee of this.state.bees) {
+      if (bee.role !== 'hired') continue;
+      bee.activity = 'idle';
+      if (message) bee.message = message;
+    }
+  }
+
+  /** Move all hired bees to their work rooms */
+  private mobilizeHiredBees() {
+    for (const bee of this.state.bees) {
+      if (bee.role !== 'hired' || !bee.hiredType) continue;
+      const workRoom = HIRED_BEE_WORKROOM[bee.hiredType];
+      this.moveBee(bee, workRoom, 'walking');
+      bee.message = 'Time to work!';
+    }
+  }
+
   /** Transition to idle state */
   private goIdle() {
     const queen = this.state.bees[0];
@@ -488,7 +756,7 @@ export class Office {
     const idleActivities: BeeActivity[] = ['drinking-coffee', 'chatting', 'idle'];
     const activity = idleActivities[Math.floor(Math.random() * idleActivities.length)];
     this.moveBee(queen, room, activity);
-    queen.message = activity === 'drinking-coffee' ? 'Coffee break ☕' : 'Waiting for instructions...';
+    queen.message = activity === 'drinking-coffee' ? 'Coffee break' : activity === 'chatting' ? 'Just hanging out' : undefined;
   }
 
   /** Add entry to event log */
@@ -648,6 +916,146 @@ export class Office {
       }
     }
     this.state.projects = Array.from(all).sort();
+  }
+
+  // --- Team Management ---
+
+  /** Calculate office level from hired bee count */
+  static calcOfficeLevel(hiredCount: number): number {
+    if (hiredCount <= 1) return 1;
+    if (hiredCount <= 3) return 2;
+    if (hiredCount <= 5) return 3;
+    return 4;
+  }
+
+  /** Recalculate office level (cosmetic — all rooms always unlocked) */
+  private refreshOfficeLevel() {
+    const hiredCount = this.state.bees.filter(b => b.role === 'hired').length;
+    this.state.officeLevel = Office.calcOfficeLevel(hiredCount);
+    this.state.unlockedRooms = ALL_ROOMS;
+  }
+
+  /** Get hire cost for a bee type */
+  static getHireCost(type: HiredBeeType): number {
+    return HIRED_BEE_CONFIG[type]?.cost ?? 999;
+  }
+
+  /** Hire a new bee. Returns the hired bee or an error string. */
+  hireBee(type: HiredBeeType): HiredBee | string {
+    const config = HIRED_BEE_CONFIG[type];
+    if (!config) return 'Unknown bee type';
+
+    const hiredCount = this.state.bees.filter(b => b.role === 'hired').length;
+    if (hiredCount >= MAX_HIRED_BEES) return `Team is full (max ${MAX_HIRED_BEES})`;
+    if (this.state.shop.honey < config.cost) return `Not enough honey (need ${config.cost}, have ${this.state.shop.honey})`;
+
+    // Deduct honey
+    this.state.shop.honey -= config.cost;
+
+    // Pick a name
+    const pool = BEE_NAMES[type];
+    const usedNames = new Set(this.state.bees.map(b => b.name));
+    const name = pool.find(n => !usedNames.has(n)) || `${type}-${hiredCount + 1}`;
+
+    const hiredBee: HiredBee = {
+      id: `hired-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      name,
+      hiredAt: Date.now(),
+    };
+
+    const room = config.homeRoom;
+
+    // Spawn at recruiter position, target home room
+    const recruiter = this.state.bees.find(b => b.role === 'recruiter');
+    const spawnX = recruiter?.x ?? 0;
+    const spawnY = recruiter?.y ?? 0;
+    const homePos = roomCenter(room);
+
+    this.state.bees.push({
+      id: hiredBee.id,
+      name,
+      role: 'hired',
+      room,
+      activity: 'walking',
+      x: spawnX,
+      y: spawnY,
+      targetX: homePos.x,
+      targetY: homePos.y,
+      color: config.color,
+      message: 'Reporting for duty!',
+      hiredType: type,
+      hiredTools: HIRED_BEE_TOOLS[type],
+    });
+
+    this.refreshOfficeLevel();
+    this.log('TeamHire', `${name} (${type}) joined the team`, '🎉');
+    console.log(`[office] Hired ${name} (${type}) — team size: ${hiredCount + 1}, level: ${this.state.officeLevel}`);
+
+    return hiredBee;
+  }
+
+  /** Fire a hired bee. Returns error string or null. */
+  fireBee(id: string): string | null {
+    const idx = this.state.bees.findIndex(b => b.id === id && b.role === 'hired');
+    if (idx < 0) return 'Bee not found';
+
+    const bee = this.state.bees[idx];
+    this.state.bees.splice(idx, 1);
+    this.refreshOfficeLevel();
+    this.log('TeamFire', `${bee.name} left the team`, '👋');
+    console.log(`[office] Fired ${bee.name} — team size: ${this.state.bees.filter(b => b.role === 'hired').length}`);
+
+    return null;
+  }
+
+  /** Get current team as HiredBee[] for persistence */
+  getTeam(): HiredBee[] {
+    return this.state.bees
+      .filter(b => b.role === 'hired' && b.hiredType)
+      .map(b => {
+        const typeDefaults = HIRED_BEE_TOOLS[b.hiredType!];
+        const typeColor = HIRED_BEE_CONFIG[b.hiredType!]?.color;
+        const entry: HiredBee = {
+          id: b.id,
+          type: b.hiredType!,
+          name: b.name,
+          hiredAt: 0,
+        };
+        // Only persist custom overrides (not type defaults)
+        if (b.hiredTools && JSON.stringify(b.hiredTools) !== JSON.stringify(typeDefaults)) {
+          entry.customTools = b.hiredTools;
+        }
+        if (b.color !== typeColor) {
+          entry.customColor = b.color;
+        }
+        return entry;
+      });
+  }
+
+  /** Update a hired bee's customization. Returns error string or null. */
+  updateBee(id: string, updates: { name?: string; customTools?: string[]; customColor?: string }): string | null {
+    const bee = this.state.bees.find(b => b.id === id && b.role === 'hired');
+    if (!bee || !bee.hiredType) return 'Bee not found';
+
+    if (updates.name !== undefined) {
+      const name = updates.name.trim();
+      if (name.length === 0 || name.length > 20) return 'Name must be 1-20 characters';
+      bee.name = name;
+    }
+
+    if (updates.customColor !== undefined) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(updates.customColor)) return 'Invalid color format';
+      bee.color = updates.customColor;
+    }
+
+    if (updates.customTools !== undefined) {
+      if (!Array.isArray(updates.customTools)) return 'customTools must be an array';
+      bee.hiredTools = updates.customTools;
+    }
+
+    this.log('TeamUpdate', `${bee.name} updated`, '⚙️');
+    return null;
   }
 
   // --- Session Persistence ---
